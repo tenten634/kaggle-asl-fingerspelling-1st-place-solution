@@ -19,7 +19,7 @@ cfg.debug = True
 cfg.name = os.path.basename(__file__).split(".")[0]
 cfg.output_dir = f"datamount/weights/{os.path.basename(__file__).split('.')[0]}"
 
-cfg.data_folder = f"/kaggle/input/asl-fingerspelling-preprocessing-train-dataset/train_landmarks_npy"
+cfg.data_folder = f"/kaggle/input/asl-fingerspelling-preprocessing-train-dataset/train_landmarks_npy/"
 cfg.train_df = f'datamount/train_folded_oof_supp.csv'
 cfg.symmetry_fp = 'datamount/symmetry.csv'
 
