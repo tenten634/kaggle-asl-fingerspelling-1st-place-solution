@@ -25,6 +25,13 @@ Quick setup guide for ASL Fingerspelling Recognition training in Kaggle Notebook
 
 **Note**: Dependency warnings (e.g., protobuf conflicts) are expected and can be ignored. Installation will complete successfully.
 
+**If TPU test fails with symbol error**, try compatible version:
+```python
+!pip uninstall torch-xla -y
+!pip install torch-xla[tpu]==2.8.0 -f https://storage.googleapis.com/libtpu-releases/index.html
+# Then restart the notebook
+```
+
 ## Step 3: Prepare Data
 
 **Note**: Only CSV/JSON files are copied. Landmark data uses virtual merge from `/kaggle/input/` (no copying needed).
@@ -60,7 +67,31 @@ for dataset_dir in os.listdir(input_base):
 !python check_kaggle_environment.py
 ```
 
-Should show: ✅ TPU available, ✅ Input datasets found, ✅ Data files ready
+**Expected output:**
+- ✅ Input datasets found
+- ✅ Data files ready (CSV/JSON in datamount/)
+- ⚠️ TPU libraries not available (this is OK - test manually below)
+- ❌ CUDA not available (expected when using TPU)
+
+**Note**: The check script may show "TPU libraries not available" even after installation. Test TPU manually:
+
+```python
+try:
+    import torch_xla
+    device = torch_xla.device()  # Use new API (no deprecation warning)
+    print(f"✅ TPU is working: {device}")
+    
+    # Quick test
+    import torch
+    x = torch.randn(10, 10, device=device)
+    print(f"✅ TPU computation test: {x.shape}")
+except Exception as e:
+    print(f"⚠️  TPU test failed: {e}")
+    print("\n🔧 Fix: Try installing compatible torch-xla version:")
+    print("   !pip uninstall torch-xla -y")
+    print("   !pip install torch-xla[tpu]==2.8.0 -f https://storage.googleapis.com/libtpu-releases/index.html")
+    print("   Then restart the notebook")
+```
 
 ## Step 5: Start Training
 
@@ -103,7 +134,10 @@ Skip Round 1 - go directly to Round 2:
 
 ## Troubleshooting
 
-- **TPU not available**: Settings → Accelerator → TPU v5e8 → Restart
+- **TPU symbol error** (`undefined symbol`): Try `torch-xla==2.8.0` instead of 2.9.0, then restart notebook
+- **TPU not available**: Settings → Accelerator → TPU v5e8 → Restart notebook
+- **TPU libraries not detected**: Restart notebook after Step 2, then test manually (see Step 4)
+- **TensorFlow missing**: Not required for training (only needed for TF-Lite conversion)
 - **Dependency conflicts**: Warnings about protobuf/API versions are expected - ignore them
 - **Out of memory**: Reduce `batch_size` in config or enable `mixed_precision = True`
 - **Data not found**: Verify datasets are added in Data sidebar

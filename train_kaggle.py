@@ -261,7 +261,7 @@ except Exception as e:
 
 # Set device (GPU, TPU, or CPU)
 if parser_args.use_tpu and USE_TPU:
-    cfg.device = xm.xla_device()
+    cfg.device = torch_xla.device()  # Use new API (no deprecation warning)
     print(f"✅ Using TPU: {cfg.device}")
 elif torch.cuda.is_available():
     cfg.device = 'cuda'
