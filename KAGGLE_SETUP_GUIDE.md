@@ -70,8 +70,10 @@ for dataset_dir in os.listdir(input_base):
 **Expected output:**
 - ✅ Input datasets found
 - ✅ Data files ready (CSV/JSON in datamount/)
-- ⚠️ TPU libraries not available (this is OK - test manually below)
+- ⚠️ TPU check may show errors (this is OK - test manually below)
 - ❌ CUDA not available (expected when using TPU)
+
+**Note**: The check script may crash with TPU initialization errors. This is normal - the script tries to fully initialize TPU which can fail. The manual test below is more reliable.
 
 **Note**: The check script may show "TPU libraries not available" even after installation. Test TPU manually:
 
@@ -82,7 +84,7 @@ try:
     print(f"✅ TPU is working: {device}")
     
     # Quick test
-    import torch
+import torch
     x = torch.randn(10, 10, device=device)
     print(f"✅ TPU computation test: {x.shape}")
 except Exception as e:

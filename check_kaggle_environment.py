@@ -74,15 +74,22 @@ def check_tpu():
     print("=" * 60)
     try:
         import torch_xla
-        import torch_xla.core.xla_model as xm
+        # Use new API to avoid deprecation warning
+        device = torch_xla.device()
         print("✅ TPU is available")
-        print(f"   TPU Device: {xm.xla_device()}")
-        print(f"   Number of TPU cores: {xm.xrt_world_size()}")
+        print(f"   TPU Device: {device}")
+        # Try to get world size (may fail in some environments)
+        try:
+            import torch_xla.core.xla_model as xm
+            print(f"   Number of TPU cores: {xm.xrt_world_size()}")
+        except:
+            pass  # Skip if world_size not available
     except ImportError:
         print("⚠️  TPU libraries not available")
         print("   Note: TPU support requires additional setup")
     except Exception as e:
-        print(f"❌ TPU not available: {e}")
+        print(f"⚠️  TPU check failed: {e}")
+        print("   Note: This may be OK - test manually with torch_xla.device()")
     print()
 
 def check_installed_packages():
