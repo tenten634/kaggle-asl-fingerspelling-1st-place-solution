@@ -108,7 +108,25 @@ class CustomDataset(Dataset):
             self.df['score'] = 1.
         self.df['score'] = self.df['score'].clip(0,1)
         #input stuff
-        with open(cfg.data_folder + 'inference_args.json', "r") as f:
+        # Try to load inference_args.json from data_folder, or search in input if not found
+        inference_args_path = cfg.data_folder + 'inference_args.json'
+        if not os.path.exists(inference_args_path):
+            # Search in input datasets
+            if IN_KAGGLE:
+                input_base = '/kaggle/input'
+                if os.path.exists(input_base):
+                    for dataset_dir in os.listdir(input_base):
+                        dataset_path = os.path.join(input_base, dataset_dir)
+                        if os.path.isdir(dataset_path):
+                            # Check train_landmarks_npy
+                            train_landmarks = os.path.join(dataset_path, 'train_landmarks_npy')
+                            if os.path.exists(train_landmarks):
+                                alt_path = os.path.join(train_landmarks, 'inference_args.json')
+                                if os.path.exists(alt_path):
+                                    inference_args_path = alt_path
+                                    break
+        
+        with open(inference_args_path, "r") as f:
             columns = json.load(f)['selected_columns']
         
         self.xyz_landmarks = np.array(columns)

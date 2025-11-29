@@ -139,17 +139,26 @@ if IN_KAGGLE:
             dataset_path = os.path.join(input_dir, dataset_name)
             if os.path.isdir(dataset_path):
                 train_landmarks_path = os.path.join(dataset_path, 'train_landmarks_npy')
-                if os.path.exists(train_landmarks_path) and 'train' in dataset_name.lower() and 'preprocessing' in dataset_name.lower():
-                    # Use input directory directly (no copying!)
-                    cfg.data_folder = os.path.realpath(train_landmarks_path) + '/'
-                    print(f"✅ Using training landmarks from input: {cfg.data_folder}")
-                    print(f"   (No copying - accessing directly from input directory)")
-                    train_landmarks_found = True
-                    break
+                # Check if it exists and has directories (not empty)
+                if os.path.exists(train_landmarks_path):
+                    try:
+                        items = os.listdir(train_landmarks_path)
+                        dirs = [i for i in items if os.path.isdir(os.path.join(train_landmarks_path, i))]
+                        # If it has substantial data (more than 10 directories), use it
+                        if len(dirs) > 10:
+                            # Use input directory directly (no copying!)
+                            cfg.data_folder = os.path.realpath(train_landmarks_path) + '/'
+                            print(f"✅ Using training landmarks from input: {cfg.data_folder}")
+                            print(f"   Found {len(dirs)} directories")
+                            print(f"   (No copying - accessing directly from input directory)")
+                            train_landmarks_found = True
+                            break
+                    except Exception as e:
+                        pass
         
         if not train_landmarks_found:
             # Fallback: use datamount if input not found
-            if os.path.exists(landmarks_target):
+            if os.path.exists(landmarks_target) and os.path.isdir(landmarks_target):
                 cfg.data_folder = os.path.realpath(landmarks_target) + '/'
                 print(f"✅ Using landmarks from datamount: {cfg.data_folder}")
             else:

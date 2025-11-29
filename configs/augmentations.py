@@ -1147,10 +1147,16 @@ class OneOf(BasicTransform):
         self.transforms = transforms
         transforms_ps = [getattr(t, 'p', 0.5) for t in transforms]  # Default to 0.5 if p not set
         s = sum(transforms_ps)
-        if s == 0:
+        
+        # Handle edge cases
+        if len(transforms_ps) == 0:
+            # Empty transforms list
+            self.transforms_ps = []
+        elif s == 0:
             # If sum is 0, use uniform distribution
             self.transforms_ps = [1.0 / len(transforms_ps) for _ in transforms_ps]
         else:
+            # Normal case: normalize probabilities
             self.transforms_ps = [t / s for t in transforms_ps]
 
     def __call__(self, *args, force_apply: bool = False, **data) -> typing.Dict[str, typing.Any]:
