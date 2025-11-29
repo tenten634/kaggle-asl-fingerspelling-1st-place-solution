@@ -1,0 +1,34 @@
+# Requirements for Google Colab
+# Note: PyTorch is usually pre-installed in Colab, but we include it for completeness
+# Install with: pip install -r requirements_colab.txt
+
+# Core ML libraries (Colab may have these, but we specify versions for consistency)
+torch>=1.13.0
+tensorflow>=2.12.0
+
+# Data processing
+pandas>=1.5.0
+numpy>=1.23.0
+
+# Transformers and model libraries
+transformers==4.32.1
+timm==0.9.6
+
+# Augmentation
+albumentations==1.3.1
+
+# Utilities
+tqdm>=4.64.0
+rapidfuzz==3.2.0
+opencv-python-headless==4.8.0.74
+
+# Logging (optional - can be disabled)
+neptune-client==1.3.1
+
+# Data download
+kaggle==1.5.16
+
+# TPU support (optional - uncomment if using TPU)
+# cloud-tpu-client==0.10
+# torch-xla
+
