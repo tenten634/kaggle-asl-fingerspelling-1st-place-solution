@@ -144,7 +144,12 @@ cfg.train_aug = A.Compose([A.Resample(sample_rate=(0.5,1.5), p=0.8),
                            A.TemporalMask(size=(0.2,0.4),mask_value=0.,p=0.5), #mask with 0 as it is post-normalization
                            A.SpatialMask(size=(0.05,0.1),mask_value=0.,mode='relative',p=0.5), #mask with 0 as it is post-normalization
                           ])
-cfg.train_aug._disable_check_args() #disable otherwise input must be numpy/ int8
+# Disable argument checking if method exists (version-dependent)
+if hasattr(cfg.train_aug, '_disable_check_args'):
+    cfg.train_aug._disable_check_args()  # disable otherwise input must be numpy/ int8
+else:
+    # Method doesn't exist in this albumentations version - that's okay
+    pass
 
 cfg.val_aug = None
 
