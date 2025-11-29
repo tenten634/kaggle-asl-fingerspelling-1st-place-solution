@@ -21,6 +21,11 @@ Quick setup guide for ASL Fingerspelling Recognition training in Kaggle Notebook
 ```python
 !pip install neptune-client==1.3.1 rapidfuzz==3.2.0
 !pip install cloud-tpu-client==0.10 torch-xla[tpu]==2.9.0 -f https://storage.googleapis.com/libtpu-releases/index.html
+
+# Fix protobuf version conflicts (TPU installs old versions, transformers needs newer)
+# Note: This will show dependency warnings - they're harmless, the packages will work
+!pip install --upgrade --no-deps protobuf>=5.28.0
+!pip install --upgrade google-api-core>=2.27.0 google-api-python-client>=2.0.0
 ```
 
 **Note**: Dependency warnings (e.g., protobuf conflicts) are expected and can be ignored. Installation will complete successfully.
@@ -73,18 +78,23 @@ for dataset_dir in os.listdir(input_base):
 - ⚠️ TPU check may show errors (this is OK - test manually below)
 - ❌ CUDA not available (expected when using TPU)
 
-**Note**: The check script may crash with TPU initialization errors. This is normal - the script tries to fully initialize TPU which can fail. The manual test below is more reliable.
+**Note**: The check script may crash at the end with "InitializeComputationClient() can only be called once" - this is **normal and harmless**. It's a known torch-xla issue during Python exit. As long as you see:
+- ✅ Data files ready
+- ✅ Input datasets found  
+- ✅ Project files exist
+
+Then you're ready! The manual TPU test below is the reliable way to verify TPU works.
 
 **Note**: The check script may show "TPU libraries not available" even after installation. Test TPU manually:
 
 ```python
 try:
     import torch_xla
+    import torch
     device = torch_xla.device()  # Use new API (no deprecation warning)
     print(f"✅ TPU is working: {device}")
     
     # Quick test
-import torch
     x = torch.randn(10, 10, device=device)
     print(f"✅ TPU computation test: {x.shape}")
 except Exception as e:
@@ -111,6 +121,8 @@ Skip Round 1 - go directly to Round 2:
 
 **Time**: ~3-5 hours per seed on TPU v5e8
 
+**Note**: First iteration on TPU can take 5-15 minutes (JIT compilation). This is normal - be patient!
+
 ### Full Pipeline
 
 ```python
@@ -136,6 +148,15 @@ Skip Round 1 - go directly to Round 2:
 
 ## Troubleshooting
 
+- **Training stuck on first iteration**: 
+  - **Normal**: First TPU iteration takes 5-15 minutes for JIT compilation - be patient!
+  - If stuck >20 minutes, restart session and try again
+  - Check if progress bar shows any activity (even if 0%)
+- **TPU "Device or resource busy" error**: 
+  - Restart notebook session (Session → Restart Session)
+  - Verify TPU is enabled: Settings → Accelerator → TPU v5e8
+  - If still failing, try GPU instead (remove `--use_tpu` flag)
+- **Protobuf import error** (`cannot import name 'runtime_version'`): Run `!pip install --upgrade --no-deps protobuf>=5.28.0` then `!pip install --upgrade google-api-core>=2.27.0 google-api-python-client>=2.0.0` after Step 2. Dependency warnings are expected but harmless.
 - **TPU symbol error** (`undefined symbol`): Try `torch-xla==2.8.0` instead of 2.9.0, then restart notebook
 - **TPU not available**: Settings → Accelerator → TPU v5e8 → Restart notebook
 - **TPU libraries not detected**: Restart notebook after Step 2, then test manually (see Step 4)

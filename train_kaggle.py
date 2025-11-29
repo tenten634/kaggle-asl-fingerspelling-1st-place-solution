@@ -359,15 +359,24 @@ for epoch in range(cfg.epochs):
                     scaler.unscale_(optimizer)
                 if cfg.clip_grad > 0:
                     torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.clip_grad)
-                scaler.step(optimizer)
-                scaler.update()
+                # TPU requires explicit synchronization
+                if parser_args.use_tpu and USE_TPU:
+                    xm.optimizer_step(optimizer, barrier=True)
+                    scaler.update()
+                else:
+                    scaler.step(optimizer)
+                    scaler.update()
                 optimizer.zero_grad()
         else:
             loss.backward()
             if i % cfg.grad_accumulation == 0:
                 if cfg.clip_grad > 0:
                     torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.clip_grad)
-                optimizer.step()
+                # TPU requires explicit synchronization
+                if parser_args.use_tpu and USE_TPU:
+                    xm.optimizer_step(optimizer, barrier=True)
+                else:
+                    optimizer.step()
                 optimizer.zero_grad()
 
         if scheduler is not None:
