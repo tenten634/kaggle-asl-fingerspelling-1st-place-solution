@@ -1,11 +1,24 @@
 import random
 from albumentations.core.transforms_interface import BasicTransform
 from torch.nn import functional as F
-from albumentations import Compose, random_utils
+from albumentations import Compose
 import torch
 import numpy as np
 import math
 import typing
+
+# Handle random_utils import for different albumentations versions
+try:
+    from albumentations import random_utils
+except ImportError:
+    try:
+        from albumentations.augmentations import random_utils
+    except ImportError:
+        # Fallback: use numpy random functions directly
+        class random_utils:
+            @staticmethod
+            def uniform(low, high, size):
+                return np.random.uniform(low, high, size)
 
 
 def crop_or_pad(data, max_len=100, mode="start"):
@@ -600,7 +613,8 @@ class SpatialNoise(BasicTransform):
     
     def get_params_dependent_on_targets(self, params):
         data = params["image"]
-        noise = random_utils.uniform(self.noise_range[0],self.noise_range[1],data.shape)
+        # Use numpy directly for compatibility across albumentations versions
+        noise = np.random.uniform(self.noise_range[0], self.noise_range[1], data.shape)
 
         return {"noise": noise}
 
