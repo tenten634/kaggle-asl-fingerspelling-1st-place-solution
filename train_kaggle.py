@@ -139,30 +139,50 @@ if IN_KAGGLE:
             dataset_path = os.path.join(input_dir, dataset_name)
             if os.path.isdir(dataset_path):
                 train_landmarks_path = os.path.join(dataset_path, 'train_landmarks_npy')
-                # Check if it exists and has directories (not empty)
-                if os.path.exists(train_landmarks_path):
+                # Check if it exists and is a directory with data
+                if os.path.exists(train_landmarks_path) and os.path.isdir(train_landmarks_path):
                     try:
                         items = os.listdir(train_landmarks_path)
                         dirs = [i for i in items if os.path.isdir(os.path.join(train_landmarks_path, i))]
                         # If it has substantial data (more than 10 directories), use it
                         if len(dirs) > 10:
                             # Use input directory directly (no copying!)
-                            cfg.data_folder = os.path.realpath(train_landmarks_path) + '/'
+                            abs_path = os.path.realpath(train_landmarks_path)
+                            if not abs_path.endswith('/'):
+                                abs_path += '/'
+                            cfg.data_folder = abs_path
                             print(f"✅ Using training landmarks from input: {cfg.data_folder}")
                             print(f"   Found {len(dirs)} directories")
                             print(f"   (No copying - accessing directly from input directory)")
                             train_landmarks_found = True
                             break
                     except Exception as e:
+                        print(f"   ⚠️  Error checking {dataset_name}/train_landmarks_npy: {e}")
                         pass
         
         if not train_landmarks_found:
             # Fallback: use datamount if input not found
             if os.path.exists(landmarks_target) and os.path.isdir(landmarks_target):
-                cfg.data_folder = os.path.realpath(landmarks_target) + '/'
+                abs_path = os.path.realpath(landmarks_target)
+                if not abs_path.endswith('/'):
+                    abs_path += '/'
+                cfg.data_folder = abs_path
                 print(f"✅ Using landmarks from datamount: {cfg.data_folder}")
             else:
                 print("⚠️  No landmarks found in input datasets or datamount")
+                # Debug: show what we searched
+                if os.path.exists(input_dir):
+                    print("   Searched in:")
+                    for dataset_name in sorted(os.listdir(input_dir)):
+                        dataset_path = os.path.join(input_dir, dataset_name)
+                        train_landmarks_path = os.path.join(dataset_path, 'train_landmarks_npy')
+                        if os.path.exists(train_landmarks_path):
+                            try:
+                                items = os.listdir(train_landmarks_path)
+                                dirs = [i for i in items if os.path.isdir(os.path.join(train_landmarks_path, i))]
+                                print(f"      - {dataset_name}/train_landmarks_npy ({len(dirs)} dirs)")
+                            except:
+                                print(f"      - {dataset_name}/train_landmarks_npy (cannot access)")
 
 if cfg.seed < 0:
     cfg.seed = np.random.randint(1_000_000)
