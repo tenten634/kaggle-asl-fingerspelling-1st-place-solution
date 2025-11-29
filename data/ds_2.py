@@ -143,6 +143,30 @@ class CustomDataset(Dataset):
         if not self.data_folder.endswith('/'):
             self.data_folder += '/'
         
+        # In Kaggle: Set up multiple data folders to search (no copying needed!)
+        # This simulates merged data without actually copying
+        self.data_folders = [self.data_folder]  # Primary folder
+        if IN_KAGGLE:
+            input_base = '/kaggle/input'
+            if os.path.exists(input_base):
+                # Find supplemental landmarks (to merge virtually)
+                for dataset_dir in os.listdir(input_base):
+                    dataset_path = os.path.join(input_base, dataset_dir)
+                    if os.path.isdir(dataset_path):
+                        supp_landmarks = os.path.join(dataset_path, 'supplemental_landmarks')
+                        if os.path.exists(supp_landmarks) and 'supp' in dataset_dir.lower():
+                            supp_path = os.path.realpath(supp_landmarks)
+                            if not supp_path.endswith('/'):
+                                supp_path += '/'
+                            if supp_path not in self.data_folders:
+                                self.data_folders.append(supp_path)
+                                print(f"✅ Added supplemental data folder: {supp_path}")
+        
+        # If we have multiple folders, we're doing virtual merge (no copying)
+        if len(self.data_folders) > 1:
+            print(f"✅ Using virtual merge: searching {len(self.data_folders)} data folders")
+            print(f"   (No copying needed - accessing input directories directly)")
+        
         self.df['phrase'] = self.df['phrase'].astype(str)
         if mode == 'train':
             self.supp_df = self.df[self.df['is_sup']==1].copy()
@@ -260,9 +284,24 @@ class CustomDataset(Dataset):
 
 
     def load_one(self, file_id, sequence_id):
-        path = self.data_folder + f'{file_id}/{sequence_id}.npy'
-        # Ensure path is absolute for DataLoader workers
-        if not os.path.isabs(path):
-            path = os.path.abspath(path)
-        data = np.load(path) # seq_len, 3* nlandmarks
-        return data
+        # Search in all data folders (virtual merge - no copying needed)
+        if hasattr(self, 'data_folders') and len(self.data_folders) > 1:
+            # Try each folder until found
+            for data_folder in self.data_folders:
+                path = data_folder + f'{file_id}/{sequence_id}.npy'
+                # Ensure path is absolute for DataLoader workers
+                if not os.path.isabs(path):
+                    path = os.path.abspath(path)
+                if os.path.exists(path):
+                    data = np.load(path)  # seq_len, 3* nlandmarks
+                    return data
+            # If not found in any folder
+            raise FileNotFoundError(f"File not found in any data folder: {file_id}/{sequence_id}.npy")
+        else:
+            # Single folder (original behavior)
+            path = self.data_folder + f'{file_id}/{sequence_id}.npy'
+            # Ensure path is absolute for DataLoader workers
+            if not os.path.isabs(path):
+                path = os.path.abspath(path)
+            data = np.load(path)  # seq_len, 3* nlandmarks
+            return data
