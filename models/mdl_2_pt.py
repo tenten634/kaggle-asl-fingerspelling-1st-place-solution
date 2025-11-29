@@ -774,7 +774,27 @@ class Net(nn.Module):
         self.feature_extractor_face = FeatureExtractor(n_landmarks=(self.landmark_types==3).sum(),out_dim=cfg.encoder_config.encoder_dim//4)
         self.feature_extractor_pose = FeatureExtractor(n_landmarks=(self.landmark_types==4).sum(),out_dim=cfg.encoder_config.encoder_dim//4)
        
-        rotary_emb = LlamaRotaryEmbedding(cfg.encoder_config.encoder_dim//cfg.encoder_config.num_attention_heads, max_position_embeddings=cfg.max_len)
+        # LlamaRotaryEmbedding signature changed in newer transformers versions
+        # Handle different API versions
+        head_dim = cfg.encoder_config.encoder_dim // cfg.encoder_config.num_attention_heads
+        try:
+            # Try old signature first: (dim, max_position_embeddings=...)
+            rotary_emb = LlamaRotaryEmbedding(head_dim, max_position_embeddings=cfg.max_len)
+        except TypeError:
+            # Try positional arguments: (dim, max_position_embeddings)
+            try:
+                rotary_emb = LlamaRotaryEmbedding(head_dim, cfg.max_len)
+            except TypeError:
+                # Newest version: just (dim), need to generate cache manually
+                rotary_emb = LlamaRotaryEmbedding(head_dim)
+                # Generate rotary embeddings cache for max_len
+                import torch
+                inv_freq = 1.0 / (10000 ** (torch.arange(0, head_dim, 2, dtype=torch.float32) / head_dim))
+                t = torch.arange(cfg.max_len, dtype=torch.float32)
+                freqs = torch.outer(t, inv_freq)
+                emb = torch.cat((freqs, freqs), dim=-1)
+                rotary_emb.cos_cached = emb.cos()[None, None, :, :]
+                rotary_emb.sin_cached = emb.sin()[None, None, :, :]
         self.cos = torch.nn.parameter.Parameter(rotary_emb.cos_cached, requires_grad=False)#[:, :, :seq_len, ...]#.to(dtype=x.dtype)
         self.sin = torch.nn.parameter.Parameter(rotary_emb.sin_cached, requires_grad=False)#[:, :, :seq_len, ...]#.to(dtype=x.dtype)
 
