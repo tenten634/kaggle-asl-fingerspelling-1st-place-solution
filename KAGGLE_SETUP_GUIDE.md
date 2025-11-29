@@ -143,6 +143,170 @@ DATA PREPARATION COMPLETE
 
 ---
 
+## Step 3.5: Fix inference_args.json (If Needed)
+
+If you get a JSON parsing error when loading cfg_2, run this to find and copy the file:
+
+```python
+import os
+import json
+import shutil
+
+print("="*60)
+print("FIXING inference_args.json")
+print("="*60)
+
+# Check if it already exists
+working_path = 'datamount/train_landmarks_npy/inference_args.json'
+if os.path.exists(working_path):
+    try:
+        with open(working_path, 'r') as f:
+            data = json.load(f)
+        print(f"✅ File already exists and is valid: {working_path}")
+        print(f"   Keys: {list(data.keys())}")
+    except Exception as e:
+        print(f"⚠️  File exists but has error: {e}")
+        print("   Will try to replace it...")
+else:
+    print(f"❌ File not found at: {working_path}")
+
+# Find and copy from input datasets
+print("\n📦 Searching in input datasets...")
+input_base = '/kaggle/input'
+found = False
+
+for dataset_dir in os.listdir(input_base):
+    dataset_path = os.path.join(input_base, dataset_dir)
+    if os.path.isdir(dataset_path):
+        landmarks_path = os.path.join(dataset_path, 'train_landmarks_npy')
+        if os.path.exists(landmarks_path):
+            inference_file = os.path.join(landmarks_path, 'inference_args.json')
+            if os.path.exists(inference_file):
+                print(f"✅ Found in: {dataset_dir}")
+                print(f"   Source: {inference_file}")
+                
+                # Read and verify
+                try:
+                    with open(inference_file, 'r') as f:
+                        data = json.load(f)
+                    print(f"   ✅ File is valid JSON")
+                    print(f"   Keys: {list(data.keys())}")
+                    if 'selected_columns' in data:
+                        print(f"   Selected columns: {len(data['selected_columns'])} columns")
+                    
+                    # Handle symlink case
+                    landmarks_dir = 'datamount/train_landmarks_npy'
+                    if os.path.islink(landmarks_dir):
+                        print(f"   ⚠️  {landmarks_dir} is a symlink")
+                        print(f"   Creating real directory and copying file...")
+                        # Remove symlink temporarily
+                        symlink_target = os.readlink(landmarks_dir)
+                        os.unlink(landmarks_dir)
+                        os.makedirs(landmarks_dir, exist_ok=True)
+                        # Copy the file
+                        dst = os.path.join(landmarks_dir, 'inference_args.json')
+                        shutil.copy2(inference_file, dst)
+                        print(f"   ✅ Copied to: {dst}")
+                        # Recreate symlink if needed (optional)
+                        # os.symlink(symlink_target, landmarks_dir)
+                    else:
+                        # Regular directory, just copy
+                        dst = working_path
+                        os.makedirs(os.path.dirname(dst), exist_ok=True)
+                        shutil.copy2(inference_file, dst)
+                        print(f"   ✅ Copied to: {dst}")
+                    
+                    found = True
+                    break
+                except Exception as e:
+                    print(f"   ❌ Error reading file: {e}")
+
+if not found:
+    print("\n⚠️  inference_args.json not found in any dataset")
+    print("   The config will use default columns (this should still work)")
+
+print("\n" + "="*60)
+```
+
+---
+
+## Step 3.6: Debug Config Loading (If You Get Division by Zero Error)
+
+If you get a "float division by zero" error when loading cfg_2, run this diagnostic:
+
+```python
+%cd kaggle-asl-fingerspelling-1st-place-solution
+
+import os
+import sys
+import traceback
+import importlib
+import json
+import pandas as pd
+
+# Set up paths
+BASEDIR = os.getcwd()
+for DIRNAME in 'configs data models postprocess metrics'.split():
+    sys.path.append(f'{BASEDIR}/{DIRNAME}/')
+
+print("="*60)
+print("DEBUGGING CONFIG LOAD")
+print("="*60)
+
+try:
+    print("\n1. Loading cfg_2...")
+    cfg_module = importlib.import_module('cfg_2')
+    cfg = cfg_module.cfg
+    print("✅ Config loaded successfully")
+    
+    print(f"\n2. Checking data files...")
+    print(f"   inference_args.json: {os.path.exists(cfg.data_folder + 'inference_args.json')}")
+    print(f"   train_df: {os.path.exists(cfg.train_df)}")
+    print(f"   symmetry_fp: {os.path.exists(cfg.symmetry_fp)}")
+    
+    print(f"\n3. Checking inference_args.json content...")
+    with open(cfg.data_folder + 'inference_args.json', 'r') as f:
+        data = json.load(f)
+    columns = data['selected_columns']
+    print(f"   Number of columns: {len(columns)}")
+    
+    # Check the division that might cause issues
+    num_landmarks = len(columns) // 3
+    print(f"\n4. Checking landmark calculation...")
+    print(f"   Total columns: {len(columns)}")
+    print(f"   Expected landmarks: {num_landmarks}")
+    
+    if len(columns) == 0:
+        print("   ❌ ERROR: columns is empty!")
+    elif len(columns) % 3 != 0:
+        print(f"   ⚠️  WARNING: {len(columns)} is not divisible by 3")
+    else:
+        print(f"   ✅ Landmark calculation looks OK")
+    
+    print(f"\n5. Checking train DataFrame...")
+    df = pd.read_csv(cfg.train_df)
+    print(f"   DataFrame shape: {df.shape}")
+    
+    if len(df) == 0:
+        print("   ❌ ERROR: DataFrame is empty!")
+    else:
+        print(f"   ✅ DataFrame has {len(df)} rows")
+    
+except ZeroDivisionError as e:
+    print(f"\n❌ DIVISION BY ZERO ERROR!")
+    print(f"   Error: {e}")
+    traceback.print_exc()
+except Exception as e:
+    print(f"\n❌ ERROR: {type(e).__name__}: {e}")
+    traceback.print_exc()
+
+print("\n" + "="*60)
+```
+
+This will help identify where the division by zero is occurring.
+
+---
+
 ## Step 4: Verify Environment (CRITICAL!)
 
 This is the **most important step** to confirm everything is ready before training:

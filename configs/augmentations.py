@@ -1145,9 +1145,13 @@ class OneOf(BasicTransform):
                 p=1.0,):
         super(OneOf, self).__init__(always_apply, p)
         self.transforms = transforms
-        transforms_ps = [t.p for t in transforms]
+        transforms_ps = [getattr(t, 'p', 0.5) for t in transforms]  # Default to 0.5 if p not set
         s = sum(transforms_ps)
-        self.transforms_ps = [t / s for t in transforms_ps]
+        if s == 0:
+            # If sum is 0, use uniform distribution
+            self.transforms_ps = [1.0 / len(transforms_ps) for _ in transforms_ps]
+        else:
+            self.transforms_ps = [t / s for t in transforms_ps]
 
     def __call__(self, *args, force_apply: bool = False, **data) -> typing.Dict[str, typing.Any]:
 

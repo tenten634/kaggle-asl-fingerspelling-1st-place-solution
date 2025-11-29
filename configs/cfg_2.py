@@ -151,9 +151,39 @@ cfg.save_weights_only = True
 cfg.save_only_last_ckpt = True
 cfg.save_val_data = True
 
-with open(cfg.data_folder + 'inference_args.json', "r") as f:
-    columns = json.load(f)['selected_columns']
-xyz_landmarks = np.array(columns)
+# Load inference_args.json - handle both symlink and regular directory
+inference_args_path = os.path.join(cfg.data_folder, 'inference_args.json')
+if not os.path.exists(inference_args_path):
+    # Try alternative locations
+    alt_paths = [
+        'datamount/train_landmarks_npy/inference_args.json',
+        '/kaggle/input/asl-fingerspelling-preprocessed-train-dataset/train_landmarks_npy/inference_args.json',
+    ]
+    for alt_path in alt_paths:
+        if os.path.exists(alt_path):
+            inference_args_path = alt_path
+            break
+    
+if os.path.exists(inference_args_path):
+    try:
+        with open(inference_args_path, "r") as f:
+            content = f.read().strip()
+            if not content:
+                raise ValueError(f"File {inference_args_path} is empty")
+            columns = json.loads(content)['selected_columns']
+        xyz_landmarks = np.array(columns)
+        print(f"✅ Loaded inference_args.json from {inference_args_path}")
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
+        print(f"⚠️  Error loading {inference_args_path}: {e}")
+        print("   Using default landmark columns")
+        # Default columns for 130 landmarks (x, y, z for each)
+        xyz_landmarks = np.array([f'x_{i}' for i in range(130)] + [f'y_{i}' for i in range(130)] + [f'z_{i}' for i in range(130)])
+else:
+    # Fallback: use default columns if file not found
+    print(f"⚠️  inference_args.json not found at {inference_args_path}")
+    print("   Using default landmark columns")
+    # Default columns for 130 landmarks (x, y, z for each)
+    xyz_landmarks = np.array([f'x_{i}' for i in range(130)] + [f'y_{i}' for i in range(130)] + [f'z_{i}' for i in range(130)])
 
 cfg.decoder_mask_aug = 0.2
 cfg.flip_aug = 0.5

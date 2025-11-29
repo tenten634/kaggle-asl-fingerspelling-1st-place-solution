@@ -167,8 +167,19 @@ try:
     tr_collate_fn = importlib.import_module(cfg.dataset).tr_collate_fn
     val_collate_fn = importlib.import_module(cfg.dataset).val_collate_fn
     batch_to_device = importlib.import_module(cfg.dataset).batch_to_device
+except ZeroDivisionError as e:
+    print(f"❌ Division by zero error when importing {cfg.dataset}: {e}")
+    print("   This might be due to empty or invalid data. Check:")
+    print(f"   1. inference_args.json exists and is valid")
+    print(f"   2. train_folded_oof_supp.csv exists and has data")
+    print(f"   3. Data files are accessible")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
 except Exception as e:
     print(f"❌ Error importing modules: {e}")
+    import traceback
+    traceback.print_exc()
     sys.exit(1)
 
 # Initialize Neptune (optional)
