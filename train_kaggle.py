@@ -51,13 +51,31 @@ except ImportError:
 
 # Set base directory - in Kaggle, we work from /kaggle/working
 if IN_KAGGLE:
-    BASEDIR = '/kaggle/working'
-    os.chdir(BASEDIR)
+    # Check if we're in the repository directory or need to find it
+    repo_dir = '/kaggle/working/kaggle-asl-fingerspelling-1st-place-solution'
+    if os.path.exists(repo_dir) and os.path.exists(os.path.join(repo_dir, 'configs')):
+        BASEDIR = repo_dir
+        os.chdir(BASEDIR)
+        print(f"✅ Changed to repository directory: {BASEDIR}")
+    elif os.path.exists('configs'):
+        # Already in the repo directory
+        BASEDIR = os.getcwd()
+        print(f"✅ Already in repository directory: {BASEDIR}")
+    else:
+        BASEDIR = '/kaggle/working'
+        os.chdir(BASEDIR)
+        print(f"⚠️  Using base directory: {BASEDIR}")
+        print(f"   Make sure configs exist at: {BASEDIR}/configs/")
 else:
     BASEDIR = './'
 
 for DIRNAME in 'configs data models postprocess metrics'.split():
-    sys.path.append(f'{BASEDIR}/{DIRNAME}/')
+    dir_path = f'{BASEDIR}/{DIRNAME}/'
+    if os.path.exists(dir_path):
+        sys.path.append(dir_path)
+        print(f"✅ Added to path: {dir_path}")
+    else:
+        print(f"⚠️  Directory not found: {dir_path}")
 
 parser = argparse.ArgumentParser(description="Kaggle Training Script")
 

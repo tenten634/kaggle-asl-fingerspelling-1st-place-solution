@@ -356,7 +356,69 @@ Next step: Run training with:
 
 **⚠️ IMPORTANT**: Only proceed to this step after **ALL checks in Step 7 pass**!
 
-### Round 1 - Train 4 Folds
+### Option A: Quick Path (Recommended for First Time)
+
+**Skip Round 1** - The repository already includes `train_folded_oof_supp.csv`, so you can go directly to Round 2:
+
+```python
+# Make sure you're in the repository directory
+%cd kaggle-asl-fingerspelling-1st-place-solution
+
+# Round 2 - Train Fullfit (2 seeds)
+!python train_kaggle.py -C cfg_2 --fold -1
+
+# Seed 2 (run again for second seed)
+!python train_kaggle.py -C cfg_2 --fold -1
+```
+
+**Training Time Estimates:**
+- **Each seed (cfg_2)**: ~6-10 hours on P100 GPU
+  - 400 epochs total
+  - Validation every 10 epochs
+  - Final checkpoint saved automatically at the end
+
+**Checkpoint Saving:**
+- ✅ **Automatic**: Final checkpoint is saved when training completes
+- ✅ **Location**: `datamount/weights/cfg_2/fold-1/checkpoint_last_seed{seed}.pth`
+- ✅ **Kaggle Auto-Save**: All files in `/kaggle/working/` are automatically saved to the **Output** tab
+- ✅ **Persistent**: You can download or access them later, even after the notebook session ends
+
+**Running Overnight:**
+- ✅ **Safe to run**: If training finishes while you're sleeping, the checkpoint will be saved
+- ✅ **Verify in morning**: Check the Output tab or run the verification code below
+- ✅ **Continue with Seed 2**: Once Seed 1 is complete, just run the Seed 2 command
+
+**Verify Checkpoint After Training:**
+```python
+import os
+
+checkpoint_dir = 'datamount/weights/cfg_2/fold-1'
+if os.path.exists(checkpoint_dir):
+    files = os.listdir(checkpoint_dir)
+    checkpoints = [f for f in files if 'checkpoint' in f]
+    print(f"✅ Found {len(checkpoints)} checkpoint(s):")
+    for ckpt in checkpoints:
+        size = os.path.getsize(os.path.join(checkpoint_dir, ckpt)) / (1024*1024)  # MB
+        print(f"   - {ckpt} ({size:.2f} MB)")
+else:
+    print("❌ Checkpoint directory not found")
+```
+
+### Convert to TF-Lite
+
+```python
+!python scripts/convert_cfg_2_to_tf_lite.py
+```
+
+**This is the fastest way to get the final model weights!**
+
+---
+
+### Option B: Full Training Pipeline (Complete Reproduction)
+
+If you want to reproduce the complete solution from scratch:
+
+#### Round 1 - Train 4 Folds
 
 Train the smaller model (cfg_1) for 4 folds:
 
@@ -376,7 +438,7 @@ Train the smaller model (cfg_1) for 4 folds:
 
 **Note**: Each fold will take several hours. You can run them in separate notebook sessions.
 
-### Generate OOF Predictions
+#### Generate OOF Predictions
 
 After all 4 folds are complete:
 
@@ -386,7 +448,7 @@ After all 4 folds are complete:
 
 This creates `train_folded_oof_supp.csv` needed for round 2.
 
-### Round 2 - Train Fullfit
+#### Round 2 - Train Fullfit
 
 Train the larger model (cfg_2) with fullfit:
 
@@ -398,11 +460,18 @@ Train the larger model (cfg_2) with fullfit:
 !python train_kaggle.py -C cfg_2 --fold -1
 ```
 
-### Convert to TF-Lite
+#### Convert to TF-Lite
 
 ```python
 !python scripts/convert_cfg_2_to_tf_lite.py
 ```
+
+---
+
+## Which Option Should You Choose?
+
+- **Option A (Quick Path)**: Use if you just want the final model weights quickly. Saves ~12+ hours of training time.
+- **Option B (Full Pipeline)**: Use if you want to reproduce the complete solution or understand the full training process.
 
 ---
 
