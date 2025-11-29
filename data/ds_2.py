@@ -217,7 +217,16 @@ class CustomDataset(Dataset):
         return feature_dict
     
     def augment(self,x):
-        x_aug = self.aug(image=x)['image']
+        # Convert torch tensor to numpy for albumentations
+        if isinstance(x, torch.Tensor):
+            x_np = x.numpy()
+        else:
+            x_np = x
+        # Apply augmentation
+        x_aug = self.aug(image=x_np)['image']
+        # Convert back to torch tensor
+        if isinstance(x_aug, np.ndarray):
+            x_aug = torch.from_numpy(x_aug)
         return x_aug
     
     
