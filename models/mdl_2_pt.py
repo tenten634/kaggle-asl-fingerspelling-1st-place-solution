@@ -778,29 +778,37 @@ class Net(nn.Module):
         # Handle different API versions
         head_dim = cfg.encoder_config.encoder_dim // cfg.encoder_config.num_attention_heads
         
+        # Create config object first (required by newer transformers)
+        from transformers.models.llama.configuration_llama import LlamaConfig
+        llama_config = LlamaConfig()
+        llama_config.max_position_embeddings = cfg.max_len
+        llama_config.hidden_size = cfg.encoder_config.encoder_dim
+        llama_config.num_attention_heads = cfg.encoder_config.num_attention_heads
+        llama_config.rope_theta = getattr(llama_config, 'rope_theta', 10000.0)  # Default rope theta
+        
         try:
-            # Try old signature first: (dim, max_position_embeddings=...)
-            rotary_emb = LlamaRotaryEmbedding(head_dim, max_position_embeddings=cfg.max_len)
-        except TypeError:
-            # Newer version expects config object or just dim
+            # Try new signature: (dim, config)
+            rotary_emb = LlamaRotaryEmbedding(head_dim, llama_config)
+        except (TypeError, AttributeError):
             try:
-                # Try with config object
-                from transformers.models.llama.configuration_llama import LlamaConfig
-                llama_config = LlamaConfig()
-                llama_config.max_position_embeddings = cfg.max_len
-                llama_config.hidden_size = cfg.encoder_config.encoder_dim
-                llama_config.num_attention_heads = cfg.encoder_config.num_attention_heads
-                rotary_emb = LlamaRotaryEmbedding(head_dim, llama_config)
-            except (TypeError, AttributeError):
-                # Fallback: create with just dim and generate cache manually
-                rotary_emb = LlamaRotaryEmbedding(head_dim)
-                # Generate rotary embeddings cache for max_len manually
-                inv_freq = 1.0 / (10000 ** (torch.arange(0, head_dim, 2, dtype=torch.float32) / head_dim))
+                # Try old signature: (dim, max_position_embeddings=...)
+                rotary_emb = LlamaRotaryEmbedding(head_dim, max_position_embeddings=cfg.max_len)
+            except TypeError:
+                # Last resort: create manually without using LlamaRotaryEmbedding
+                # Generate rotary embeddings cache manually
+                inv_freq = 1.0 / (10000.0 ** (torch.arange(0, head_dim, 2, dtype=torch.float32) / head_dim))
                 t = torch.arange(cfg.max_len, dtype=torch.float32)
                 freqs = torch.outer(t, inv_freq)
                 emb = torch.cat((freqs, freqs), dim=-1)
-                rotary_emb.cos_cached = emb.cos()[None, None, :, :]
-                rotary_emb.sin_cached = emb.sin()[None, None, :, :]
+                # Create a simple object to hold cos and sin
+                class SimpleRotaryEmb:
+                    def __init__(self, cos, sin):
+                        self.cos_cached = cos
+                        self.sin_cached = sin
+                rotary_emb = SimpleRotaryEmb(
+                    cos=emb.cos()[None, None, :, :],
+                    sin=emb.sin()[None, None, :, :]
+                )
         self.cos = torch.nn.parameter.Parameter(rotary_emb.cos_cached, requires_grad=False)#[:, :, :seq_len, ...]#.to(dtype=x.dtype)
         self.sin = torch.nn.parameter.Parameter(rotary_emb.sin_cached, requires_grad=False)#[:, :, :seq_len, ...]#.to(dtype=x.dtype)
 
