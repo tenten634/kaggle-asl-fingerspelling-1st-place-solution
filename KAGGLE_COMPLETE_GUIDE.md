@@ -1,6 +1,18 @@
-# Step-by-Step Guide: Kaggle Notebook Setup & Verification
+# Complete Kaggle Setup & Training Guide
 
-Since you've already added the datasets and enabled GPU P100, follow these steps to verify your environment and then start training.
+This is the **single comprehensive guide** for running ASL Fingerspelling Recognition training in Kaggle Notebooks.
+
+---
+
+## 📋 Quick Start (5 Minutes)
+
+If you've already added datasets and enabled GPU P100, jump to **Step 1** below.
+
+**Prerequisites:**
+1. Create Kaggle Notebook → Enable **GPU P100** (Settings → Accelerator → GPU)
+2. Add datasets via Data sidebar:
+   - `asl-fingerspelling-preprocessing-train-dataset`
+   - `asl-fingerspelling-preprocessed-supp-dataset`
 
 ---
 
@@ -17,10 +29,10 @@ In your first code cell, run:
 **Expected output:**
 ```
 Cloning into 'kaggle-asl-fingerspelling-1st-place-solution'...
-/content/kaggle/working/kaggle-asl-fingerspelling-1st-place-solution
+/kaggle/working/kaggle-asl-fingerspelling-1st-place-solution
 ```
 
-**✅ Checkpoint**: You should see the repository cloned and be in the correct directory.
+**✅ Checkpoint**: Repository cloned and you're in the correct directory.
 
 ---
 
@@ -35,8 +47,6 @@ Run this to install any missing dependencies:
 
 **Expected output:**
 ```
-Collecting neptune-client==1.3.1
-...
 Successfully installed neptune-client-1.3.1 rapidfuzz-3.2.0
 ```
 
@@ -133,15 +143,13 @@ DATA PREPARATION COMPLETE
 
 ---
 
-## Step 4: Verify Environment (IMPORTANT!)
+## Step 4: Verify Environment (CRITICAL!)
 
-This is the critical step to confirm everything is ready before training:
+This is the **most important step** to confirm everything is ready before training:
 
 ```python
 !python check_kaggle_environment.py
 ```
-
-**What to look for:**
 
 ### ✅ All Good - You should see:
 ```
@@ -288,6 +296,9 @@ GPU VERIFICATION
 Run this to get a final summary:
 
 ```python
+import os
+import torch
+
 print("="*60)
 print("PRE-TRAINING CHECKLIST")
 print("="*60)
@@ -298,7 +309,7 @@ checks = {
     "Data directory exists": os.path.exists('datamount'),
     "Train CSV exists": os.path.exists('datamount/train_folded.csv'),
     "Landmarks exist": os.path.exists('datamount/train_landmarks_npy'),
-    "GPU available": torch.cuda.is_available() if 'torch' in dir() else False,
+    "GPU available": torch.cuda.is_available(),
 }
 
 all_passed = True
@@ -343,9 +354,11 @@ Next step: Run training with:
 
 ## Step 8: Start Training (After All Checks Pass)
 
-Once all checks pass, you can start training:
+**⚠️ IMPORTANT**: Only proceed to this step after **ALL checks in Step 7 pass**!
 
 ### Round 1 - Train 4 Folds
+
+Train the smaller model (cfg_1) for 4 folds:
 
 ```python
 # Fold 0
@@ -361,19 +374,27 @@ Once all checks pass, you can start training:
 !python train_kaggle.py -C cfg_1 --fold 3
 ```
 
+**Note**: Each fold will take several hours. You can run them in separate notebook sessions.
+
 ### Generate OOF Predictions
+
+After all 4 folds are complete:
 
 ```python
 !python scripts/get_train_folded_oof_supp.py
 ```
 
+This creates `train_folded_oof_supp.csv` needed for round 2.
+
 ### Round 2 - Train Fullfit
+
+Train the larger model (cfg_2) with fullfit:
 
 ```python
 # Seed 1
 !python train_kaggle.py -C cfg_2 --fold -1
 
-# Seed 2 (run again)
+# Seed 2 (run again for second seed)
 !python train_kaggle.py -C cfg_2 --fold -1
 ```
 
@@ -385,7 +406,27 @@ Once all checks pass, you can start training:
 
 ---
 
-## Troubleshooting
+## 📁 Directory Structure in Kaggle
+
+```
+/kaggle/
+├── input/                    # Read-only datasets (added via UI)
+│   ├── asl-fingerspelling-preprocessing-train-dataset/
+│   └── asl-fingerspelling-preprocessed-supp-dataset/
+│
+├── working/                  # Your code and outputs (writable)
+│   └── kaggle-asl-fingerspelling-1st-place-solution/
+│       ├── datamount/        # Data copied here
+│       ├── configs/
+│       ├── train_kaggle.py
+│       └── ...
+│
+└── temp/                     # Temporary files
+```
+
+---
+
+## 🔧 Troubleshooting
 
 ### Issue: Environment check fails
 **Solution**: Go back to the failing step and fix the issue before proceeding.
@@ -403,20 +444,51 @@ Once all checks pass, you can start training:
 - Verify datasets are added in Data sidebar
 - Re-run Step 3 (data preparation)
 
+### Issue: "Dataset not found in /kaggle/input"
+**Solution**: Make sure you added the datasets in Data sidebar. Check the Data section.
+
+### Issue: "Permission denied" when copying
+**Solution**: `/kaggle/input/` is read-only. Copy files to `/kaggle/working/` instead (which Step 3 does).
+
 ---
 
-## Summary
+## 💡 Key Points
+
+- **Data Location**: `/kaggle/input/` (read-only) → Copy to `/kaggle/working/`
+- **Output Location**: `/kaggle/working/` (auto-saved to Output tab)
+- **GPU**: Enable in Settings → Accelerator → GPU
+- **Time Limit**: 9 hours per session (free tier), 30h/week GPU time
+- **Save Checkpoints**: Outputs in `/kaggle/working/` are auto-saved
+
+---
+
+## 📋 Summary Checklist
 
 **Before Training:**
-1. ✅ Clone repository
-2. ✅ Install packages
-3. ✅ Prepare data
-4. ✅ Verify environment (Step 4 - CRITICAL!)
-5. ✅ Verify data structure (Step 5)
-6. ✅ Test GPU (Step 6)
-7. ✅ Final checklist (Step 7)
+- [ ] Created Kaggle Notebook
+- [ ] Enabled GPU accelerator (P100)
+- [ ] Added training landmarks dataset
+- [ ] Added supplemental landmarks dataset
+- [ ] Cloned repository (Step 1)
+- [ ] Installed packages (Step 2)
+- [ ] Prepared data (Step 3)
+- [ ] Verified environment (Step 4 - CRITICAL!)
+- [ ] Verified data structure (Step 5)
+- [ ] Tested GPU (Step 6)
+- [ ] Final checklist passed (Step 7)
 
 **Only proceed to Step 8 (Training) after ALL checks pass!**
+
+---
+
+## 🎓 Complete Training Workflow
+
+Once all setup is complete:
+
+1. **Round 1**: Train 4 folds of cfg_1
+2. **Generate OOF**: Run `get_train_folded_oof_supp.py`
+3. **Round 2**: Train 2 seeds of cfg_2 (fullfit)
+4. **Convert**: Export to TF-Lite
 
 ---
 

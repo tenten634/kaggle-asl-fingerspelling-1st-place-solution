@@ -27,17 +27,22 @@ def check_kaggle():
     print("=" * 60)
     print("ENVIRONMENT CHECK")
     print("=" * 60)
-    kaggle_paths = ['/kaggle/input', '/kaggle/working', '/kaggle/temp']
-    is_kaggle = all(os.path.exists(path) for path in kaggle_paths)
+    # Check for essential Kaggle directories (temp is optional)
+    essential_paths = ['/kaggle/input', '/kaggle/working']
+    temp_path = '/kaggle/temp'
+    is_kaggle = all(os.path.exists(path) for path in essential_paths)
     
     if is_kaggle:
         print("✅ Running in Kaggle Notebook")
         print(f"   Input directory: /kaggle/input")
         print(f"   Working directory: /kaggle/working")
-        print(f"   Temp directory: /kaggle/temp")
+        if os.path.exists(temp_path):
+            print(f"   Temp directory: /kaggle/temp")
+        else:
+            print(f"   Temp directory: /kaggle/temp (optional, not present)")
     else:
         print("❌ Not running in Kaggle Notebook")
-        print("   Expected directories: /kaggle/input, /kaggle/working, /kaggle/temp")
+        print("   Expected directories: /kaggle/input, /kaggle/working")
     print()
     return is_kaggle
 
@@ -131,16 +136,19 @@ def check_kaggle_directories():
     print("=" * 60)
     
     kaggle_dirs = {
-        '/kaggle/input': 'Input (datasets)',
-        '/kaggle/working': 'Working (your code)',
-        '/kaggle/temp': 'Temp (temporary files)',
+        '/kaggle/input': ('Input (datasets)', True),  # Required
+        '/kaggle/working': ('Working (your code)', True),  # Required
+        '/kaggle/temp': ('Temp (temporary files)', False),  # Optional
     }
     
-    for path, desc in kaggle_dirs.items():
+    for path, (desc, required) in kaggle_dirs.items():
         if os.path.exists(path):
             print(f"✅ {path} - {desc}")
         else:
-            print(f"❌ {path} - NOT FOUND")
+            if required:
+                print(f"❌ {path} - NOT FOUND")
+            else:
+                print(f"⚠️  {path} - NOT FOUND (optional)")
     print()
 
 def check_input_datasets():
