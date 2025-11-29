@@ -124,6 +124,7 @@ class CustomDataset(Dataset):
                                 alt_path = os.path.join(train_landmarks, 'inference_args.json')
                                 if os.path.exists(alt_path):
                                     inference_args_path = alt_path
+                                    print(f"✅ Found inference_args.json in input: {alt_path}")
                                     break
         
         with open(inference_args_path, "r") as f:
@@ -156,7 +157,6 @@ class CustomDataset(Dataset):
             self.data_folder = cfg.data_folder
         
         # Resolve symlinks to absolute path (DataLoader workers can't follow symlinks)
-        import os
         self.data_folder = os.path.realpath(self.data_folder)
         if not self.data_folder.endswith('/'):
             self.data_folder += '/'
