@@ -8,6 +8,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
+# Check if running in Kaggle
+IN_KAGGLE = os.path.exists('/kaggle/input') and os.path.exists('/kaggle/working')
+
 def batch_to_device(batch, device):
     batch_dict = {key: batch[key].to(device) for key in batch}
     return batch_dict
@@ -258,5 +261,8 @@ class CustomDataset(Dataset):
 
     def load_one(self, file_id, sequence_id):
         path = self.data_folder + f'{file_id}/{sequence_id}.npy'
+        # Ensure path is absolute for DataLoader workers
+        if not os.path.isabs(path):
+            path = os.path.abspath(path)
         data = np.load(path) # seq_len, 3* nlandmarks
         return data

@@ -127,44 +127,79 @@ if IN_KAGGLE:
         print("⚠️  Setting pin_memory to False for Kaggle compatibility")
         cfg.pin_memory = False
     
-    # Check if data is in input directory and point directly to it
+    # Merge data from input directories to datamount (following original setup)
     input_dir = '/kaggle/input'
+    landmarks_target = os.path.join(BASEDIR, 'datamount', 'train_landmarks_npy')
+    
     if os.path.exists(input_dir):
-        # Look for the dataset in input directory
+        # Create target directory if it doesn't exist
+        os.makedirs(landmarks_target, exist_ok=True)
+        
+        # Find and merge training landmarks
+        train_landmarks_found = False
         for dataset_name in os.listdir(input_dir):
             dataset_path = os.path.join(input_dir, dataset_name)
             if os.path.isdir(dataset_path):
-                # Check if this looks like our dataset
-                landmarks_path = os.path.join(dataset_path, 'train_landmarks_npy')
-                if os.path.exists(landmarks_path):
-                    # Point directly to input directory instead of using datamount
-                    print(f"✅ Found landmarks in input: {landmarks_path}")
-                    print(f"   Using input directory directly (no copying needed)")
-                    cfg.data_folder = landmarks_path + '/'  # Update to use input directory directly
-                    
-                    # Also check for CSV files and update paths if needed
-                    for csv_file in ['train_folded.csv', 'character_to_prediction_index.json', 'symmetry.csv']:
-                        src = os.path.join(dataset_path, csv_file)
-                        if os.path.exists(src):
-                            # Update config paths to point to input if they reference datamount
-                            if csv_file == 'train_folded.csv' and hasattr(cfg, 'train_df'):
-                                if 'datamount' in cfg.train_df:
-                                    # Keep using datamount for CSV if it exists there, otherwise use input
-                                    datamount_csv = os.path.join(BASEDIR, 'datamount', csv_file)
-                                    if not os.path.exists(datamount_csv):
-                                        # CSV not in datamount, but we need it there for train_folded_oof_supp.csv
-                                        # So we'll keep using datamount path (it should be copied in setup)
-                                        pass
-                            elif csv_file == 'symmetry.csv' and hasattr(cfg, 'symmetry_fp'):
-                                if 'datamount' in cfg.symmetry_fp:
-                                    datamount_sym = os.path.join(BASEDIR, 'datamount', csv_file)
-                                    if not os.path.exists(datamount_sym):
-                                        # Copy symmetry.csv to datamount if needed
-                                        os.makedirs(os.path.dirname(datamount_sym), exist_ok=True)
-                                        import shutil
-                                        shutil.copy2(src, datamount_sym)
-                                        print(f"✅ Copied {csv_file} to datamount")
+                # Check for training landmarks
+                train_landmarks_path = os.path.join(dataset_path, 'train_landmarks_npy')
+                if os.path.exists(train_landmarks_path) and 'train' in dataset_name.lower() and 'preprocessing' in dataset_name.lower():
+                    print(f"✅ Found training landmarks in: {dataset_name}")
+                    print(f"   Merging into: {landmarks_target}")
+                    # Use symlink or copy - try symlink first for speed
+                    import shutil
+                    items = os.listdir(train_landmarks_path)
+                    copied = 0
+                    for item in items:
+                        src = os.path.join(train_landmarks_path, item)
+                        dst = os.path.join(landmarks_target, item)
+                        if not os.path.exists(dst):
+                            if os.path.isdir(src):
+                                # Copy directory
+                                shutil.copytree(src, dst)
+                                copied += 1
+                                if copied % 100 == 0:
+                                    print(f"   Copied {copied} directories...")
+                            else:
+                                shutil.copy2(src, dst)
+                    print(f"   ✅ Merged {copied} directories from training data")
+                    train_landmarks_found = True
                     break
+        
+        # Find and merge supplemental landmarks (like original: mv supplemental_landmarks/* train_landmarks_npy/)
+        supp_landmarks_found = False
+        for dataset_name in os.listdir(input_dir):
+            dataset_path = os.path.join(input_dir, dataset_name)
+            if os.path.isdir(dataset_path):
+                # Check for supplemental landmarks
+                supp_landmarks_path = os.path.join(dataset_path, 'supplemental_landmarks')
+                if os.path.exists(supp_landmarks_path) and 'supp' in dataset_name.lower():
+                    print(f"✅ Found supplemental landmarks in: {dataset_name}")
+                    print(f"   Merging into: {landmarks_target} (like original: mv supplemental_landmarks/* train_landmarks_npy/)")
+                    import shutil
+                    items = os.listdir(supp_landmarks_path)
+                    copied = 0
+                    for item in items:
+                        src = os.path.join(supp_landmarks_path, item)
+                        dst = os.path.join(landmarks_target, item)
+                        if not os.path.exists(dst):
+                            if os.path.isdir(src):
+                                # Copy directory (merge into train_landmarks_npy)
+                                shutil.copytree(src, dst)
+                                copied += 1
+                                if copied % 100 == 0:
+                                    print(f"   Copied {copied} directories...")
+                            else:
+                                shutil.copy2(src, dst)
+                    print(f"   ✅ Merged {copied} directories from supplemental data")
+                    supp_landmarks_found = True
+                    break
+        
+        # Update cfg.data_folder to point to merged directory
+        if train_landmarks_found or supp_landmarks_found:
+            cfg.data_folder = landmarks_target + '/'
+            print(f"✅ Using merged landmarks directory: {cfg.data_folder}")
+        else:
+            print("⚠️  No landmarks found in input datasets")
 
 if cfg.seed < 0:
     cfg.seed = np.random.randint(1_000_000)
