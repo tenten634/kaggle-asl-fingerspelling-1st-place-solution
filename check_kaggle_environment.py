@@ -1,7 +1,7 @@
 """
-Environment Check Script for Google Colab
+Environment Check Script for Kaggle Notebooks
 This script checks the current environment and provides information about
-GPU/TPU availability, Python version, and installed packages.
+GPU/TPU availability, Python version, and installed packages in Kaggle.
 """
 
 import sys
@@ -22,19 +22,24 @@ def check_python_version():
         print("✅ Python version is compatible")
     print()
 
-def check_colab():
-    """Check if running in Google Colab"""
+def check_kaggle():
+    """Check if running in Kaggle"""
     print("=" * 60)
     print("ENVIRONMENT CHECK")
     print("=" * 60)
-    try:
-        import google.colab
-        print("✅ Running in Google Colab")
-        return True
-    except ImportError:
-        print("❌ Not running in Google Colab")
-        return False
+    kaggle_paths = ['/kaggle/input', '/kaggle/working', '/kaggle/temp']
+    is_kaggle = all(os.path.exists(path) for path in kaggle_paths)
+    
+    if is_kaggle:
+        print("✅ Running in Kaggle Notebook")
+        print(f"   Input directory: /kaggle/input")
+        print(f"   Working directory: /kaggle/working")
+        print(f"   Temp directory: /kaggle/temp")
+    else:
+        print("❌ Not running in Kaggle Notebook")
+        print("   Expected directories: /kaggle/input, /kaggle/working, /kaggle/temp")
     print()
+    return is_kaggle
 
 def check_gpu():
     """Check GPU availability"""
@@ -52,7 +57,7 @@ def check_gpu():
                 print(f"   GPU {i} Memory: {torch.cuda.get_device_properties(i).total_memory / 1e9:.2f} GB")
         else:
             print("❌ CUDA is not available")
-            print("   Note: You may need to enable GPU in Colab: Runtime -> Change runtime type -> GPU")
+            print("   Note: Enable GPU in Kaggle: Settings → Accelerator → GPU")
     except ImportError:
         print("⚠️  PyTorch not installed yet")
     print()
@@ -114,15 +119,54 @@ def check_installed_packages():
     print()
     if missing:
         print(f"⚠️  Missing packages: {', '.join(missing)}")
-        print("   Run the setup script to install them")
+        print("   Install them in a code cell: !pip install package_name")
     else:
         print("✅ All required packages are installed")
     print()
 
-def check_directories():
-    """Check if required directories exist"""
+def check_kaggle_directories():
+    """Check Kaggle directory structure"""
     print("=" * 60)
-    print("DIRECTORY CHECK")
+    print("KAGGLE DIRECTORY CHECK")
+    print("=" * 60)
+    
+    kaggle_dirs = {
+        '/kaggle/input': 'Input (datasets)',
+        '/kaggle/working': 'Working (your code)',
+        '/kaggle/temp': 'Temp (temporary files)',
+    }
+    
+    for path, desc in kaggle_dirs.items():
+        if os.path.exists(path):
+            print(f"✅ {path} - {desc}")
+        else:
+            print(f"❌ {path} - NOT FOUND")
+    print()
+
+def check_input_datasets():
+    """Check if datasets are added to the notebook"""
+    print("=" * 60)
+    print("INPUT DATASETS CHECK")
+    print("=" * 60)
+    
+    input_dir = '/kaggle/input'
+    if os.path.exists(input_dir):
+        datasets = [d for d in os.listdir(input_dir) if os.path.isdir(os.path.join(input_dir, d))]
+        if datasets:
+            print("✅ Found datasets:")
+            for dataset in datasets:
+                print(f"   - {dataset}")
+        else:
+            print("⚠️  No datasets found in /kaggle/input")
+            print("   Add datasets: Data → Add input → Search for dataset")
+    else:
+        print("❌ /kaggle/input directory not found")
+    print()
+
+def check_project_files():
+    """Check if project files exist"""
+    print("=" * 60)
+    print("PROJECT FILES CHECK")
     print("=" * 60)
     
     required_dirs = [
@@ -148,30 +192,43 @@ def check_data_files():
     print("DATA FILES CHECK")
     print("=" * 60)
     
-    required_files = [
+    # Check in working directory
+    working_files = [
         'datamount/character_to_prediction_index.json',
         'datamount/train_folded.csv',
         'datamount/symmetry.csv',
     ]
     
-    optional_files = [
-        'datamount/train_folded_oof_supp.csv',
-        'datamount/train_landmarks_npy/',
-    ]
+    # Check in input directory (if datasets are added)
+    input_paths = []
+    if os.path.exists('/kaggle/input'):
+        for dataset_dir in os.listdir('/kaggle/input'):
+            dataset_path = f'/kaggle/input/{dataset_dir}'
+            if os.path.isdir(dataset_path):
+                # Check common dataset names
+                if 'asl-fingerspelling' in dataset_dir.lower() or 'landmarks' in dataset_dir.lower():
+                    input_paths.append(dataset_path)
     
-    print("Required files:")
-    for file_path in required_files:
+    print("Required files (in working directory):")
+    for file_path in working_files:
         if os.path.exists(file_path):
             print(f"✅ {file_path}")
         else:
             print(f"❌ {file_path} - NOT FOUND")
     
-    print("\nOptional files (for full training):")
-    for file_path in optional_files:
-        if os.path.exists(file_path):
-            print(f"✅ {file_path}")
-        else:
-            print(f"⚠️  {file_path} - NOT FOUND (may need to download data)")
+    print("\nInput datasets:")
+    if input_paths:
+        for path in input_paths:
+            print(f"✅ {path}")
+            # Check for landmarks directory
+            landmarks_path = os.path.join(path, 'train_landmarks_npy')
+            if os.path.exists(landmarks_path):
+                print(f"   ✅ train_landmarks_npy/ found")
+            else:
+                print(f"   ⚠️  train_landmarks_npy/ not found in dataset")
+    else:
+        print("⚠️  No relevant datasets found in /kaggle/input")
+        print("   Add the dataset: Data → Add input → Search 'asl-fingerspelling'")
     print()
 
 def check_disk_space():
@@ -180,7 +237,7 @@ def check_disk_space():
     print("DISK SPACE CHECK")
     print("=" * 60)
     try:
-        stat = os.statvfs('/')
+        stat = os.statvfs('/kaggle/working')
         free_gb = (stat.f_bavail * stat.f_frsize) / (1024**3)
         total_gb = (stat.f_blocks * stat.f_frsize) / (1024**3)
         used_gb = total_gb - free_gb
@@ -200,17 +257,19 @@ def check_disk_space():
 def main():
     """Run all checks"""
     print("\n" + "=" * 60)
-    print("GOOGLE COLAB ENVIRONMENT CHECK")
+    print("KAGGLE NOTEBOOK ENVIRONMENT CHECK")
     print("=" * 60)
     print()
     
     check_python_version()
-    is_colab = check_colab()
+    is_kaggle = check_kaggle()
+    check_kaggle_directories()
     check_gpu()
-    if is_colab:
+    if is_kaggle:
         check_tpu()
     check_installed_packages()
-    check_directories()
+    check_input_datasets()
+    check_project_files()
     check_data_files()
     check_disk_space()
     
@@ -219,9 +278,9 @@ def main():
     print("=" * 60)
     print()
     print("Next steps:")
-    print("1. If packages are missing, run: python setup_colab.py")
-    print("2. If data is missing, download it using Kaggle API")
-    print("3. Run training with: python train_colab.py -C cfg_1")
+    print("1. If packages are missing, install them: !pip install package_name")
+    print("2. If data is missing, add dataset: Data → Add input")
+    print("3. Run training with: !python train_kaggle.py -C cfg_1 --fold 0")
 
 if __name__ == "__main__":
     main()

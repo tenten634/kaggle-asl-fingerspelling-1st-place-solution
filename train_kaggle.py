@@ -1,6 +1,6 @@
 """
-Colab-compatible training script for ASL Fingerspelling Recognition
-This is a modified version of train.py that works better in Google Colab environment
+Kaggle-compatible training script for ASL Fingerspelling Recognition
+This is a modified version of train.py that works in Kaggle Notebooks
 """
 
 import os
@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import importlib
 import sys
-from tqdm import tqdm, notebook
+from tqdm import tqdm
 import argparse
 import torch
 from torch.cuda.amp import GradScaler, autocast
@@ -21,14 +21,14 @@ import transformers
 import random
 from utils import calc_grad_norm, set_seed
 
-# Check if running in Colab
-try:
-    import google.colab
-    IN_COLAB = True
-    print("✅ Running in Google Colab")
-except ImportError:
-    IN_COLAB = False
-    print("⚠️  Not running in Colab - using standard settings")
+# Check if running in Kaggle
+IN_KAGGLE = os.path.exists('/kaggle/input') and os.path.exists('/kaggle/working')
+if IN_KAGGLE:
+    print("✅ Running in Kaggle Notebook")
+    print(f"   Working directory: /kaggle/working")
+    print(f"   Input directory: /kaggle/input")
+else:
+    print("⚠️  Not running in Kaggle - using standard settings")
 
 # Try to import neptune, make it optional
 try:
@@ -49,11 +49,17 @@ try:
 except ImportError:
     pass
 
-BASEDIR = './'
+# Set base directory - in Kaggle, we work from /kaggle/working
+if IN_KAGGLE:
+    BASEDIR = '/kaggle/working'
+    os.chdir(BASEDIR)
+else:
+    BASEDIR = './'
+
 for DIRNAME in 'configs data models postprocess metrics'.split():
     sys.path.append(f'{BASEDIR}/{DIRNAME}/')
 
-parser = argparse.ArgumentParser(description="Colab Training Script")
+parser = argparse.ArgumentParser(description="Kaggle Training Script")
 
 parser.add_argument("-C", "--config", help="config filename", default="cfg_1")
 parser.add_argument("-G", "--gpu_id", default="", help="GPU ID")
@@ -92,16 +98,42 @@ if len(other_args) > 1:
             else:
                 cfg.__dict__[key] = cfg_type(other_args[key])
 
-# Colab-specific adjustments
-if IN_COLAB:
-    # Reduce num_workers for Colab (Colab doesn't handle high num_workers well)
+# Kaggle-specific adjustments
+if IN_KAGGLE:
+    # Reduce num_workers for Kaggle (Kaggle doesn't handle high num_workers well)
     if cfg.num_workers > 2:
-        print(f"⚠️  Reducing num_workers from {cfg.num_workers} to 2 for Colab compatibility")
+        print(f"⚠️  Reducing num_workers from {cfg.num_workers} to 2 for Kaggle compatibility")
         cfg.num_workers = 2
-    # Disable pin_memory in Colab if it causes issues
+    # Disable pin_memory in Kaggle if it causes issues
     if cfg.pin_memory:
-        print("⚠️  Setting pin_memory to False for Colab compatibility")
+        print("⚠️  Setting pin_memory to False for Kaggle compatibility")
         cfg.pin_memory = False
+    
+    # Check if data is in input directory and create symlink if needed
+    input_dir = '/kaggle/input'
+    if os.path.exists(input_dir):
+        # Look for the dataset in input directory
+        for dataset_name in os.listdir(input_dir):
+            dataset_path = os.path.join(input_dir, dataset_name)
+            if os.path.isdir(dataset_path):
+                # Check if this looks like our dataset
+                landmarks_path = os.path.join(dataset_path, 'train_landmarks_npy')
+                if os.path.exists(landmarks_path):
+                    # Create symlink in working directory
+                    target_path = os.path.join(BASEDIR, 'datamount', 'train_landmarks_npy')
+                    if not os.path.exists(target_path):
+                        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                        os.symlink(landmarks_path, target_path)
+                        print(f"✅ Created symlink: {target_path} -> {landmarks_path}")
+                    
+                    # Also check for CSV files
+                    for csv_file in ['train_folded.csv', 'character_to_prediction_index.json', 'symmetry.csv']:
+                        src = os.path.join(dataset_path, csv_file)
+                        dst = os.path.join(BASEDIR, 'datamount', csv_file)
+                        if os.path.exists(src) and not os.path.exists(dst):
+                            os.makedirs(os.path.dirname(dst), exist_ok=True)
+                            os.symlink(src, dst)
+                            print(f"✅ Created symlink: {dst} -> {src}")
 
 if cfg.seed < 0:
     cfg.seed = np.random.randint(1_000_000)
@@ -135,7 +167,7 @@ if NEPTUNE_AVAILABLE and not parser_args.disable_neptune:
         
         neptune_run = neptune.init_run(
             project=cfg.neptune_project,
-            tags="colab",
+            tags="kaggle",
             mode="async",
             api_token=neptune_api_token,
             capture_stdout=False,
