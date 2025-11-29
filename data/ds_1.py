@@ -127,6 +127,12 @@ class CustomDataset(Dataset):
             self.data_folder = cfg.test_data_folder
         else:
             self.data_folder = cfg.data_folder
+        
+        # Resolve symlinks to absolute path (DataLoader workers can't follow symlinks)
+        import os
+        self.data_folder = os.path.realpath(self.data_folder)
+        if not self.data_folder.endswith('/'):
+            self.data_folder += '/'
 
     def __getitem__(self, idx):
 

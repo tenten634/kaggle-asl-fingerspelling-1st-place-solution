@@ -134,6 +134,12 @@ class CustomDataset(Dataset):
         else:
             self.data_folder = cfg.data_folder
         
+        # Resolve symlinks to absolute path (DataLoader workers can't follow symlinks)
+        import os
+        self.data_folder = os.path.realpath(self.data_folder)
+        if not self.data_folder.endswith('/'):
+            self.data_folder += '/'
+        
         self.df['phrase'] = self.df['phrase'].astype(str)
         if mode == 'train':
             self.supp_df = self.df[self.df['is_sup']==1].copy()
