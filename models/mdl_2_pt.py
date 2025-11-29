@@ -777,18 +777,24 @@ class Net(nn.Module):
         # LlamaRotaryEmbedding signature changed in newer transformers versions
         # Handle different API versions
         head_dim = cfg.encoder_config.encoder_dim // cfg.encoder_config.num_attention_heads
+        
         try:
             # Try old signature first: (dim, max_position_embeddings=...)
             rotary_emb = LlamaRotaryEmbedding(head_dim, max_position_embeddings=cfg.max_len)
         except TypeError:
-            # Try positional arguments: (dim, max_position_embeddings)
+            # Newer version expects config object or just dim
             try:
-                rotary_emb = LlamaRotaryEmbedding(head_dim, cfg.max_len)
-            except TypeError:
-                # Newest version: just (dim), need to generate cache manually
+                # Try with config object
+                from transformers.models.llama.configuration_llama import LlamaConfig
+                llama_config = LlamaConfig()
+                llama_config.max_position_embeddings = cfg.max_len
+                llama_config.hidden_size = cfg.encoder_config.encoder_dim
+                llama_config.num_attention_heads = cfg.encoder_config.num_attention_heads
+                rotary_emb = LlamaRotaryEmbedding(head_dim, llama_config)
+            except (TypeError, AttributeError):
+                # Fallback: create with just dim and generate cache manually
                 rotary_emb = LlamaRotaryEmbedding(head_dim)
-                # Generate rotary embeddings cache for max_len
-                import torch
+                # Generate rotary embeddings cache for max_len manually
                 inv_freq = 1.0 / (10000 ** (torch.arange(0, head_dim, 2, dtype=torch.float32) / head_dim))
                 t = torch.arange(cfg.max_len, dtype=torch.float32)
                 freqs = torch.outer(t, inv_freq)
