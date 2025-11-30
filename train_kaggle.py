@@ -44,10 +44,22 @@ USE_TPU = False
 try:
     import torch_xla
     import torch_xla.core.xla_model as xm
-    USE_TPU = True
-    print("✅ TPU support detected")
+    # Test if TPU actually works (not just installed)
+    try:
+        device = torch_xla.device()
+        USE_TPU = True
+        print("✅ TPU support detected")
+    except Exception as e:
+        print(f"⚠️  TPU libraries installed but not functional: {e}")
+        print("   Try: !pip uninstall torch-xla -y && !pip install torch-xla[tpu]==2.8.0 -f https://storage.googleapis.com/libtpu-releases/index.html")
 except ImportError:
     pass
+except Exception as e:
+    # Handle symbol errors and other import issues (e.g., torch-xla 2.9.0 compatibility issues)
+    print(f"⚠️  TPU import error (symbol mismatch): {e}")
+    print("   This usually means torch-xla version is incompatible with PyTorch")
+    print("   Fix: !pip uninstall torch-xla -y && !pip install torch-xla[tpu]==2.8.0 -f https://storage.googleapis.com/libtpu-releases/index.html")
+    # Don't set USE_TPU = True if import fails
 
 # Set base directory - in Kaggle, we work from /kaggle/working
 if IN_KAGGLE:

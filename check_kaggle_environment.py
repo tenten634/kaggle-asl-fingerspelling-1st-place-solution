@@ -207,14 +207,14 @@ def check_data_files():
     print("DATA FILES CHECK")
     print("=" * 60)
     
-    # Check in working directory
+    # Check in working directory (CSV/JSON files - these are copied)
     working_files = [
         'datamount/character_to_prediction_index.json',
         'datamount/train_folded.csv',
         'datamount/symmetry.csv',
     ]
     
-    # Check in input directory (if datasets are added)
+    # Check in input directory (landmark data - accessed via virtual merge, no copying)
     input_paths = []
     if os.path.exists('/kaggle/input'):
         for dataset_dir in os.listdir('/kaggle/input'):
@@ -224,23 +224,47 @@ def check_data_files():
                 if 'asl-fingerspelling' in dataset_dir.lower() or 'landmarks' in dataset_dir.lower():
                     input_paths.append(dataset_path)
     
-    print("Required files (in working directory):")
+    print("Required files (in working directory - copied):")
     for file_path in working_files:
         if os.path.exists(file_path):
             print(f"✅ {file_path}")
         else:
             print(f"❌ {file_path} - NOT FOUND")
     
-    print("\nInput datasets:")
+    print("\nInput datasets (landmark data - virtual merge, no copying needed):")
     if input_paths:
+        train_landmarks_found = False
+        supp_landmarks_found = False
         for path in input_paths:
+            dataset_name = os.path.basename(path)
             print(f"✅ {path}")
-            # Check for landmarks directory
+            
+            # Check for train_landmarks_npy (required for main training dataset)
             landmarks_path = os.path.join(path, 'train_landmarks_npy')
             if os.path.exists(landmarks_path):
-                print(f"   ✅ train_landmarks_npy/ found")
+                print(f"   ✅ train_landmarks_npy/ found (will be accessed via virtual merge)")
+                train_landmarks_found = True
             else:
-                print(f"   ⚠️  train_landmarks_npy/ not found in dataset")
+                # Check for supplemental_landmarks (optional, for supplemental dataset)
+                supp_landmarks = os.path.join(path, 'supplemental_landmarks')
+                if os.path.exists(supp_landmarks):
+                    print(f"   ✅ supplemental_landmarks/ found (will be accessed via virtual merge)")
+                    supp_landmarks_found = True
+                elif 'supp' in dataset_name.lower():
+                    # Supplemental dataset without landmarks is OK
+                    print(f"   ℹ️  Supplemental dataset (landmarks not required)")
+                else:
+                    # Only warn if it looks like a main training dataset
+                    if 'train' in dataset_name.lower() and 'preprocessed' in dataset_name.lower():
+                        print(f"   ⚠️  train_landmarks_npy/ not found")
+                    else:
+                        # Other datasets might not need landmarks
+                        print(f"   ℹ️  No landmarks (may not be required)")
+        
+        if not train_landmarks_found:
+            print("\n   ⚠️  WARNING: No train_landmarks_npy found in any dataset!")
+        else:
+            print("\n   ✅ Virtual merge ready: Landmark data will be accessed directly from input directories")
     else:
         print("⚠️  No relevant datasets found in /kaggle/input")
         print("   Add the dataset: Data → Add input → Search 'asl-fingerspelling'")
