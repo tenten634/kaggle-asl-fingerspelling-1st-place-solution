@@ -347,7 +347,12 @@ for epoch in range(cfg.epochs):
             output_dict = model(batch)
         
         loss = output_dict["loss"]
-        losses.append(loss.item())
+        # TPU: Don't call .item() during training (forces sync, very slow)
+        # Store tensor directly, convert only when needed
+        if parser_args.use_tpu and USE_TPU:
+            losses.append(loss)  # Store tensor, convert later
+        else:
+            losses.append(loss.item())
 
         if cfg.grad_accumulation > 1:
             loss /= cfg.grad_accumulation
@@ -381,13 +386,19 @@ for epoch in range(cfg.epochs):
 
         if scheduler is not None:
             scheduler.step()
+        
+        # TPU: Mark step after backward/optimizer to execute operations
+        if parser_args.use_tpu and USE_TPU and i % cfg.grad_accumulation == 0:
+            xm.mark_step()  # Execute accumulated operations
 
         # Log to Neptune (if available)
         if neptune_run:
             try:
                 loss_names = [key for key in output_dict if 'loss' in key]
                 for l in loss_names:
-                    neptune_run[f"train/{l}"].log(value=output_dict[l].item(), step=cfg.curr_step)
+                    # TPU: Convert tensor to float only when logging
+                    loss_val = float(output_dict[l]) if parser_args.use_tpu and USE_TPU else output_dict[l].item()
+                    neptune_run[f"train/{l}"].log(value=loss_val, step=cfg.curr_step)
                 neptune_run["lr"].log(
                     value=optimizer.param_groups[0]["lr"], step=cfg.curr_step
                 )
