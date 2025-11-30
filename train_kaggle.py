@@ -339,6 +339,8 @@ print("="*60 + "\n")
 
 for epoch in range(cfg.epochs):
     cfg.curr_epoch = epoch
+    # TPU: Update progress bar less frequently to avoid forced synchronization
+    update_interval = 10 if (parser_args.use_tpu and USE_TPU) else 1
     progress_bar = tqdm(range(len(train_dataloader)), desc=f'Train epoch {epoch}')
     tr_it = iter(train_dataloader)
     losses = []
@@ -378,8 +380,9 @@ for epoch in range(cfg.epochs):
                     torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.clip_grad)
                 # TPU requires explicit synchronization
                 if parser_args.use_tpu and USE_TPU:
-                    xm.optimizer_step(optimizer, barrier=True)
+                    xm.optimizer_step(optimizer, barrier=False)  # Don't block, use mark_step instead
                     scaler.update()
+                    xm.mark_step()  # Execute operations immediately after optimizer step
                 else:
                     scaler.step(optimizer)
                     scaler.update()
@@ -391,25 +394,25 @@ for epoch in range(cfg.epochs):
                     torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.clip_grad)
                 # TPU requires explicit synchronization
                 if parser_args.use_tpu and USE_TPU:
-                    xm.optimizer_step(optimizer, barrier=True)
+                    xm.optimizer_step(optimizer, barrier=False)  # Don't block, use mark_step instead
+                    xm.mark_step()  # Execute operations immediately after optimizer step
                 else:
                     optimizer.step()
                 optimizer.zero_grad()
 
         if scheduler is not None:
             scheduler.step()
-        
-        # TPU: Mark step after backward/optimizer to execute operations
-        if parser_args.use_tpu and USE_TPU and i % cfg.grad_accumulation == 0:
-            xm.mark_step()  # Execute accumulated operations
 
-        # Log to Neptune (if available)
-        if neptune_run:
+        # Log to Neptune (if available) - less frequently to avoid sync overhead
+        if neptune_run and (i % 10 == 0 or i % cfg.grad_accumulation == 0):
             try:
                 loss_names = [key for key in output_dict if 'loss' in key]
                 for l in loss_names:
-                    # TPU: Convert tensor to float only when logging
-                    loss_val = float(output_dict[l]) if parser_args.use_tpu and USE_TPU else output_dict[l].item()
+                    # TPU: Convert tensor to float only when logging (detach first to avoid warning)
+                    if parser_args.use_tpu and USE_TPU:
+                        loss_val = float(output_dict[l].detach())
+                    else:
+                        loss_val = output_dict[l].item()
                     neptune_run[f"train/{l}"].log(value=loss_val, step=cfg.curr_step)
                 neptune_run["lr"].log(
                     value=optimizer.param_groups[0]["lr"], step=cfg.curr_step
