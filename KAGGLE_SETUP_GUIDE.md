@@ -15,6 +15,7 @@ Setup guide for training ASL Fingerspelling Recognition models in Kaggle Noteboo
 ```python
 !git clone https://github.com/tenten634/kaggle-asl-fingerspelling-1st-place-solution.git
 %cd kaggle-asl-fingerspelling-1st-place-solution
+!git checkout dev
 ```
 
 ## Step 2: Install Packages
@@ -88,6 +89,8 @@ Train cfg_2 directly (skips Round 1):
 **TPU:**
 ```python
 %cd kaggle-asl-fingerspelling-1st-place-solution
+# Note: Batch size is automatically reduced to 32 for TPU (TPU v5e8 has 15.75GB memory)
+# If you still get OOM errors, manually reduce: --batch_size 16 or --batch_size 8
 !python train_kaggle.py -C cfg_2 --fold -1 --use_tpu
 !python train_kaggle.py -C cfg_2 --fold -1 --use_tpu
 ```
@@ -131,9 +134,11 @@ Train cfg_2 directly (skips Round 1):
 
 ### TPU
 - **First iteration slow (5-15 min)**: Normal - TPU JIT compilation
+- **Out of memory (OOM)**: TPU v5e8 has 15.75GB HBM - batch_size is automatically reduced to 32 for TPU
 - **Device or resource busy**: Restart notebook session
 - **Protobuf import error**: Re-run TPU package installation from Step 2
 - **TPU symbol error**: Try `torch-xla==2.8.0` instead of 2.9.0
+- **Memory error persists**: Manually reduce batch_size: `--batch_size 16` or `--batch_size 8`
 
 ### General
 - **Data not found**: Verify datasets added in Data sidebar

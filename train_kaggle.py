@@ -275,6 +275,20 @@ except Exception as e:
 if parser_args.use_tpu and USE_TPU:
     cfg.device = torch_xla.device()  # Use new API (no deprecation warning)
     print(f"✅ Using TPU: {cfg.device}")
+    
+    # TPU has limited memory (15.75GB HBM) - reduce batch size if needed
+    original_batch_size = cfg.batch_size
+    if cfg.batch_size > 32:
+        # Reduce batch size for TPU (TPU v5e8 has ~15.75GB HBM)
+        cfg.batch_size = 32
+        print(f"⚠️  Reducing batch_size from {original_batch_size} to {cfg.batch_size} for TPU memory constraints")
+        # Adjust grad_accumulation to maintain similar effective batch size
+        if cfg.grad_accumulation > 1:
+            # Try to maintain effective batch size
+            original_effective = original_batch_size * cfg.grad_accumulation
+            # Use grad_accumulation to compensate
+            cfg.grad_accumulation = max(1, int(original_effective / cfg.batch_size))
+            print(f"⚠️  Adjusting grad_accumulation to {cfg.grad_accumulation} to maintain effective batch size ~{cfg.batch_size * cfg.grad_accumulation}")
 elif torch.cuda.is_available():
     cfg.device = 'cuda'
     print(f"✅ Using GPU: {torch.cuda.get_device_name(0)}")
@@ -380,9 +394,13 @@ for epoch in range(cfg.epochs):
                     torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.clip_grad)
                 # TPU requires explicit synchronization
                 if parser_args.use_tpu and USE_TPU:
-                    xm.optimizer_step(optimizer, barrier=False)  # Don't block, use mark_step instead
+                    xm.optimizer_step(optimizer, barrier=False)  # Don't block, use sync instead
                     scaler.update()
-                    xm.mark_step()  # Execute operations immediately after optimizer step
+                    # Use torch_xla.sync() if available (newer API), fallback to xm.mark_step()
+                    try:
+                        torch_xla.sync()  # Newer API (replaces deprecated xm.mark_step)
+                    except (AttributeError, TypeError):
+                        xm.mark_step()  # Fallback for older torch_xla versions
                 else:
                     scaler.step(optimizer)
                     scaler.update()
@@ -394,8 +412,12 @@ for epoch in range(cfg.epochs):
                     torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.clip_grad)
                 # TPU requires explicit synchronization
                 if parser_args.use_tpu and USE_TPU:
-                    xm.optimizer_step(optimizer, barrier=False)  # Don't block, use mark_step instead
-                    xm.mark_step()  # Execute operations immediately after optimizer step
+                    xm.optimizer_step(optimizer, barrier=False)  # Don't block, use sync instead
+                    # Use torch_xla.sync() if available (newer API), fallback to xm.mark_step()
+                    try:
+                        torch_xla.sync()  # Newer API (replaces deprecated xm.mark_step)
+                    except (AttributeError, TypeError):
+                        xm.mark_step()  # Fallback for older torch_xla versions
                 else:
                     optimizer.step()
                 optimizer.zero_grad()
