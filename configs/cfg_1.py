@@ -111,11 +111,11 @@ cfg.optimizer = "AdamW"
 cfg.weight_decay = 0.05
 cfg.clip_grad = 4.
 cfg.warmup = 10
-cfg.batch_size = 64
+cfg.batch_size = 32
 cfg.batch_size_val = 128
 cfg.mixed_precision = False # True
 cfg.pin_memory = False
-cfg.grad_accumulation = 8.
+cfg.grad_accumulation = 16.
 cfg.num_workers = 8
 
 

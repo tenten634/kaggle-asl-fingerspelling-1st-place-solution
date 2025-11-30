@@ -14,7 +14,7 @@ import sys
 from tqdm import tqdm
 import argparse
 import torch
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler, autocast
 from torch.utils.data import Dataset, DataLoader
 from collections import defaultdict
 import transformers
@@ -328,7 +328,12 @@ scheduler = transformers.get_cosine_schedule_with_warmup(
     num_training_steps=cfg.epochs * (total_steps // cfg.batch_size),
     num_cycles=0.5
 )
-scaler = GradScaler()
+# Use new API for GradScaler (device-agnostic)
+if parser_args.use_tpu and USE_TPU:
+    # TPU: GradScaler might not be needed or use default
+    scaler = GradScaler()  # TPU handles mixed precision differently
+else:
+    scaler = GradScaler('cuda')
 
 # Create output directory
 if not os.path.exists(f"{cfg.output_dir}/fold{cfg.fold}/"):
@@ -369,8 +374,12 @@ for epoch in range(cfg.epochs):
         batch = batch_to_device(data, cfg.device)
         
         if cfg.mixed_precision:
-            with autocast():
+            # TPU handles mixed precision internally, CUDA needs explicit autocast
+            if parser_args.use_tpu and USE_TPU:
                 output_dict = model(batch)
+            else:
+                with autocast('cuda'):
+                    output_dict = model(batch)
         else:
             output_dict = model(batch)
         
@@ -455,8 +464,11 @@ for epoch in range(cfg.epochs):
         for ind_, data in enumerate(tqdm(val_dataloader, desc=f'Val epoch {epoch}')):
             batch = batch_to_device(data, cfg.device)
             if cfg.mixed_precision:
-                with autocast():
+                if parser_args.use_tpu and USE_TPU:
                     output = model(batch)
+                else:
+                    with autocast('cuda'):
+                        output = model(batch)
             else:
                 output = model(batch)
             for key, val in output.items():
