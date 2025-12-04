@@ -96,6 +96,11 @@ parser.add_argument("-G", "--gpu_id", default="", help="GPU ID")
 parser.add_argument("--fold", type=int, default=None, help="Fold number (overrides config)")
 parser.add_argument("--use_tpu", action="store_true", help="Use TPU instead of GPU")
 parser.add_argument("--disable_neptune", action="store_true", help="Disable Neptune logging")
+parser.add_argument("--epochs", type=int, default=None, help="Number of training epochs (overrides config)")
+parser.add_argument("--batch_size", type=int, default=None, help="Batch size (overrides config)")
+parser.add_argument("--grad_accumulation", type=float, default=None, help="Gradient accumulation steps (overrides config)")
+parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume training from")
+parser.add_argument("--total_epochs", type=int, default=None, help="Total epochs for learning rate schedule (use with --resume to continue from checkpoint)")
 parser_args, other_args = parser.parse_known_args(sys.argv)
 
 # Load config
@@ -113,6 +118,19 @@ if parser_args.gpu_id != "":
 if parser_args.fold is not None:
     print(f'overwriting cfg.fold: {cfg.fold} -> {parser_args.fold}')
     cfg.fold = parser_args.fold
+
+# Overwrite epochs, batch_size, grad_accumulation if specified
+if parser_args.epochs is not None:
+    print(f'overwriting cfg.epochs: {cfg.epochs} -> {parser_args.epochs}')
+    cfg.epochs = parser_args.epochs
+
+if parser_args.batch_size is not None:
+    print(f'overwriting cfg.batch_size: {cfg.batch_size} -> {parser_args.batch_size}')
+    cfg.batch_size = parser_args.batch_size
+
+if parser_args.grad_accumulation is not None:
+    print(f'overwriting cfg.grad_accumulation: {cfg.grad_accumulation} -> {parser_args.grad_accumulation}')
+    cfg.grad_accumulation = parser_args.grad_accumulation
 
 # Overwrite params in config with additional args
 if len(other_args) > 1:
@@ -277,18 +295,37 @@ if parser_args.use_tpu and USE_TPU:
     print(f"✅ Using TPU: {cfg.device}")
     
     # TPU has limited memory (15.75GB HBM) - reduce batch size if needed
+    # Only auto-adjust if user hasn't explicitly set batch_size or grad_accumulation
+    user_set_batch_size = parser_args.batch_size is not None
+    user_set_grad_accum = parser_args.grad_accumulation is not None
+    
     original_batch_size = cfg.batch_size
-    if cfg.batch_size > 32:
+    original_grad_accum = cfg.grad_accumulation
+    
+    # More aggressive reduction for TPU - start with 16, can go lower if needed
+    # cfg_2 with max_len=384 is memory-intensive, so we need smaller batches
+    tpu_safe_batch_size = 16
+    
+    if cfg.batch_size > tpu_safe_batch_size and not user_set_batch_size:
         # Reduce batch size for TPU (TPU v5e8 has ~15.75GB HBM)
-        cfg.batch_size = 32
+        # For cfg_2 with max_len=384, even 32 can be too large
+        cfg.batch_size = tpu_safe_batch_size
         print(f"⚠️  Reducing batch_size from {original_batch_size} to {cfg.batch_size} for TPU memory constraints")
+        print(f"   (TPU v5e8 has 15.75GB HBM - cfg_2 with max_len=384 requires smaller batches)")
         # Adjust grad_accumulation to maintain similar effective batch size
-        if cfg.grad_accumulation > 1:
+        # Only if user hasn't explicitly set it
+        if not user_set_grad_accum and cfg.grad_accumulation > 1:
             # Try to maintain effective batch size
             original_effective = original_batch_size * cfg.grad_accumulation
             # Use grad_accumulation to compensate
             cfg.grad_accumulation = max(1, int(original_effective / cfg.batch_size))
             print(f"⚠️  Adjusting grad_accumulation to {cfg.grad_accumulation} to maintain effective batch size ~{cfg.batch_size * cfg.grad_accumulation}")
+    elif cfg.batch_size > tpu_safe_batch_size and user_set_batch_size:
+        print(f"⚠️  Warning: batch_size {cfg.batch_size} may be too large for TPU (15.75GB HBM)")
+        print(f"   For cfg_2 with max_len=384, recommended batch_size is 16 or lower")
+        print(f"   If you encounter OOM errors, try: --batch_size 16 or --batch_size 8")
+    elif user_set_batch_size or user_set_grad_accum:
+        print(f"✅ Using user-specified TPU settings: batch_size={cfg.batch_size}, grad_accumulation={cfg.grad_accumulation}")
 elif torch.cuda.is_available():
     cfg.device = 'cuda'
     print(f"✅ Using GPU: {torch.cuda.get_device_name(0)}")
@@ -322,10 +359,19 @@ print(f"✅ Model initialized on {cfg.device}")
 
 total_steps = len(train_dataset)
 optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
+
+# Determine total epochs for learning rate schedule
+# If resuming and total_epochs is specified, use that for LR schedule
+# Otherwise, use cfg.epochs (which may be overridden by --epochs)
+total_epochs_for_schedule = cfg.epochs
+if parser_args.total_epochs is not None:
+    total_epochs_for_schedule = parser_args.total_epochs
+    print(f"📊 Using total_epochs={total_epochs_for_schedule} for learning rate schedule")
+
 scheduler = transformers.get_cosine_schedule_with_warmup(
     optimizer,
     num_warmup_steps=cfg.warmup * (total_steps // cfg.batch_size),
-    num_training_steps=cfg.epochs * (total_steps // cfg.batch_size),
+    num_training_steps=total_epochs_for_schedule * (total_steps // cfg.batch_size),
     num_cycles=0.5
 )
 # Use new API for GradScaler (device-agnostic)
@@ -340,8 +386,47 @@ if not os.path.exists(f"{cfg.output_dir}/fold{cfg.fold}/"):
     os.makedirs(f"{cfg.output_dir}/fold{cfg.fold}/")
     print(f"✅ Created output directory: {cfg.output_dir}/fold{cfg.fold}/")
 
-# Training loop
+# Resume from checkpoint if specified
+start_epoch = 0
 cfg.curr_step = 0
+if parser_args.resume is not None:
+    checkpoint_path = parser_args.resume
+    if os.path.exists(checkpoint_path):
+        print(f"🔄 Resuming from checkpoint: {checkpoint_path}")
+        checkpoint = torch.load(checkpoint_path, map_location=cfg.device)
+        model.load_state_dict(checkpoint["model"])
+        
+        # Try to load optimizer, scheduler, and scaler states if available
+        if "optimizer" in checkpoint:
+            optimizer.load_state_dict(checkpoint["optimizer"])
+            print("✅ Loaded optimizer state")
+        if "scheduler" in checkpoint and parser_args.total_epochs is None:
+            # Only load scheduler state if we're not changing total_epochs
+            scheduler.load_state_dict(checkpoint["scheduler"])
+            print("✅ Loaded scheduler state")
+        elif parser_args.total_epochs is not None:
+            # Recreate scheduler with new total_epochs, but step to the correct position
+            if "epoch" in checkpoint:
+                # Calculate how many steps we've already done
+                steps_done = checkpoint["epoch"] * (total_steps // cfg.batch_size)
+                # Step scheduler to the correct position
+                for _ in range(steps_done):
+                    scheduler.step()
+                print(f"✅ Recreated scheduler with total_epochs={total_epochs_for_schedule}, stepped to step {steps_done}")
+        if "scaler" in checkpoint:
+            scaler.load_state_dict(checkpoint["scaler"])
+            print("✅ Loaded scaler state")
+        if "epoch" in checkpoint:
+            start_epoch = checkpoint["epoch"] + 1
+            print(f"✅ Resuming from epoch {start_epoch}")
+        if "curr_step" in checkpoint:
+            cfg.curr_step = checkpoint["curr_step"]
+            print(f"✅ Resuming from step {cfg.curr_step}")
+    else:
+        print(f"⚠️  Checkpoint not found: {checkpoint_path}")
+        print("   Starting training from scratch")
+
+# Training loop
 optimizer.zero_grad()
 total_grad_norm = None
 total_grad_norm_after_clip = None
@@ -351,12 +436,13 @@ print("\n" + "="*60)
 print("STARTING TRAINING")
 print("="*60)
 print(f"Epochs: {cfg.epochs}")
+print(f"Starting from epoch: {start_epoch}")
 print(f"Batch size: {cfg.batch_size}")
 print(f"Learning rate: {cfg.lr}")
 print(f"Device: {cfg.device}")
 print("="*60 + "\n")
 
-for epoch in range(cfg.epochs):
+for epoch in range(start_epoch, cfg.epochs):
     cfg.curr_epoch = epoch
     # TPU: Update progress bar less frequently to avoid forced synchronization
     update_interval = 10 if (parser_args.use_tpu and USE_TPU) else 1
@@ -507,11 +593,29 @@ for epoch in range(cfg.epochs):
 
     # Save checkpoint
     if not cfg.save_only_last_ckpt:
-        torch.save({"model": model.state_dict()}, 
+        checkpoint_dict = {
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "scheduler": scheduler.state_dict(),
+            "scaler": scaler.state_dict(),
+            "epoch": epoch,
+            "curr_step": cfg.curr_step,
+            "seed": cfg.seed
+        }
+        torch.save(checkpoint_dict, 
                   f"{cfg.output_dir}/fold{cfg.fold}/checkpoint_last_seed{cfg.seed}.pth")
 
 # Final save
-torch.save({"model": model.state_dict()}, 
+checkpoint_dict = {
+    "model": model.state_dict(),
+    "optimizer": optimizer.state_dict(),
+    "scheduler": scheduler.state_dict(),
+    "scaler": scaler.state_dict(),
+    "epoch": cfg.epochs - 1,
+    "curr_step": cfg.curr_step,
+    "seed": cfg.seed
+}
+torch.save(checkpoint_dict, 
           f"{cfg.output_dir}/fold{cfg.fold}/checkpoint_last_seed{cfg.seed}.pth")
 print(f"\n✅ Checkpoint saved: {cfg.output_dir}/fold{cfg.fold}/checkpoint_last_seed{cfg.seed}.pth")
 

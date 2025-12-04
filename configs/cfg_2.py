@@ -119,7 +119,7 @@ cfg.encoder_config = encoder_config
 
 # OPTIMIZATION & SCHEDULE
 cfg.fold = 0
-cfg.epochs = 35  # Reduced from 400 to fit within Kaggle's 9-hour GPU quota (13:40 per epoch)
+cfg.epochs = 400
 cfg.lr = 5e-4 * 9
 cfg.optimizer = "AdamW"
 cfg.weight_decay = 0.08
