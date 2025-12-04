@@ -393,35 +393,72 @@ if parser_args.resume is not None:
     checkpoint_path = parser_args.resume
     if os.path.exists(checkpoint_path):
         print(f"🔄 Resuming from checkpoint: {checkpoint_path}")
-        checkpoint = torch.load(checkpoint_path, map_location=cfg.device)
-        model.load_state_dict(checkpoint["model"])
-        
-        # Try to load optimizer, scheduler, and scaler states if available
-        if "optimizer" in checkpoint:
-            optimizer.load_state_dict(checkpoint["optimizer"])
-            print("✅ Loaded optimizer state")
-        if "scheduler" in checkpoint and parser_args.total_epochs is None:
-            # Only load scheduler state if we're not changing total_epochs
-            scheduler.load_state_dict(checkpoint["scheduler"])
-            print("✅ Loaded scheduler state")
-        elif parser_args.total_epochs is not None:
-            # Recreate scheduler with new total_epochs, but step to the correct position
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location=cfg.device)
+            
+            # Load model state
+            if "model" in checkpoint:
+                model.load_state_dict(checkpoint["model"])
+                print("✅ Loaded model state")
+            else:
+                print("⚠️  No model state found in checkpoint, starting from scratch")
+            
+            # Try to load optimizer, scheduler, and scaler states if available
+            if "optimizer" in checkpoint:
+                try:
+                    optimizer.load_state_dict(checkpoint["optimizer"])
+                    print("✅ Loaded optimizer state")
+                except Exception as e:
+                    print(f"⚠️  Failed to load optimizer state: {e}")
+                    print("   Continuing with fresh optimizer state")
+            
+            if "scheduler" in checkpoint and parser_args.total_epochs is None:
+                # Only load scheduler state if we're not changing total_epochs
+                try:
+                    scheduler.load_state_dict(checkpoint["scheduler"])
+                    print("✅ Loaded scheduler state")
+                except Exception as e:
+                    print(f"⚠️  Failed to load scheduler state: {e}")
+                    print("   Continuing with fresh scheduler state")
+            elif parser_args.total_epochs is not None:
+                # Recreate scheduler with new total_epochs, but step to the correct position
+                if "epoch" in checkpoint:
+                    try:
+                        # Calculate how many steps we've already done
+                        steps_done = checkpoint["epoch"] * (total_steps // cfg.batch_size)
+                        # Step scheduler to the correct position
+                        for _ in range(steps_done):
+                            scheduler.step()
+                        # Sync optimizer learning rate with scheduler's calculated value
+                        # This ensures continuity when switching from 35-epoch to 400-epoch schedule
+                        current_lr = scheduler.get_last_lr()[0]
+                        for param_group in optimizer.param_groups:
+                            param_group['lr'] = current_lr
+                        print(f"✅ Recreated scheduler with total_epochs={total_epochs_for_schedule}, stepped to step {steps_done}")
+                        print(f"✅ Synced optimizer learning rate to {current_lr:.2e} (from scheduler)")
+                    except Exception as e:
+                        print(f"⚠️  Failed to recreate scheduler: {e}")
+                        print("   Continuing with fresh scheduler state")
+            
+            if "scaler" in checkpoint:
+                try:
+                    scaler.load_state_dict(checkpoint["scaler"])
+                    print("✅ Loaded scaler state")
+                except Exception as e:
+                    print(f"⚠️  Failed to load scaler state: {e}")
+                    print("   Continuing with fresh scaler state")
+            
             if "epoch" in checkpoint:
-                # Calculate how many steps we've already done
-                steps_done = checkpoint["epoch"] * (total_steps // cfg.batch_size)
-                # Step scheduler to the correct position
-                for _ in range(steps_done):
-                    scheduler.step()
-                print(f"✅ Recreated scheduler with total_epochs={total_epochs_for_schedule}, stepped to step {steps_done}")
-        if "scaler" in checkpoint:
-            scaler.load_state_dict(checkpoint["scaler"])
-            print("✅ Loaded scaler state")
-        if "epoch" in checkpoint:
-            start_epoch = checkpoint["epoch"] + 1
-            print(f"✅ Resuming from epoch {start_epoch}")
-        if "curr_step" in checkpoint:
-            cfg.curr_step = checkpoint["curr_step"]
-            print(f"✅ Resuming from step {cfg.curr_step}")
+                start_epoch = checkpoint["epoch"] + 1
+                print(f"✅ Resuming from epoch {start_epoch}")
+            if "curr_step" in checkpoint:
+                cfg.curr_step = checkpoint["curr_step"]
+                print(f"✅ Resuming from step {cfg.curr_step}")
+        except Exception as e:
+            print(f"❌ Error loading checkpoint: {e}")
+            print("   Starting training from scratch")
+            import traceback
+            traceback.print_exc()
     else:
         print(f"⚠️  Checkpoint not found: {checkpoint_path}")
         print("   Starting training from scratch")
@@ -571,7 +608,12 @@ for epoch in range(start_epoch, cfg.epochs):
                     val_data[key] = torch.cat(value, dim=0)
 
         if cfg.save_val_data:
-            torch.save(val_data, f"{cfg.output_dir}/fold{cfg.fold}/val_data_seed{cfg.seed}.pth")
+            try:
+                val_data_path = f"{cfg.output_dir}/fold{cfg.fold}/val_data_seed{cfg.seed}.pth"
+                torch.save(val_data, val_data_path)
+                print(f"✅ Validation data saved: {val_data_path}")
+            except Exception as e:
+                print(f"⚠️  Failed to save validation data: {e}")
 
         loss_names = [key for key in output if 'loss' in key]
         loss_names += [key for key in output if 'score' in key]
@@ -593,31 +635,40 @@ for epoch in range(start_epoch, cfg.epochs):
 
     # Save checkpoint
     if not cfg.save_only_last_ckpt:
-        checkpoint_dict = {
-            "model": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "scheduler": scheduler.state_dict(),
-            "scaler": scaler.state_dict(),
-            "epoch": epoch,
-            "curr_step": cfg.curr_step,
-            "seed": cfg.seed
-        }
-        torch.save(checkpoint_dict, 
-                  f"{cfg.output_dir}/fold{cfg.fold}/checkpoint_last_seed{cfg.seed}.pth")
+        try:
+            checkpoint_dict = {
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict(),
+                "scaler": scaler.state_dict(),
+                "epoch": epoch,
+                "curr_step": cfg.curr_step,
+                "seed": cfg.seed
+            }
+            checkpoint_path = f"{cfg.output_dir}/fold{cfg.fold}/checkpoint_last_seed{cfg.seed}.pth"
+            torch.save(checkpoint_dict, checkpoint_path)
+            print(f"✅ Checkpoint saved: {checkpoint_path}")
+        except Exception as e:
+            print(f"⚠️  Failed to save checkpoint: {e}")
 
 # Final save
-checkpoint_dict = {
-    "model": model.state_dict(),
-    "optimizer": optimizer.state_dict(),
-    "scheduler": scheduler.state_dict(),
-    "scaler": scaler.state_dict(),
-    "epoch": cfg.epochs - 1,
-    "curr_step": cfg.curr_step,
-    "seed": cfg.seed
-}
-torch.save(checkpoint_dict, 
-          f"{cfg.output_dir}/fold{cfg.fold}/checkpoint_last_seed{cfg.seed}.pth")
-print(f"\n✅ Checkpoint saved: {cfg.output_dir}/fold{cfg.fold}/checkpoint_last_seed{cfg.seed}.pth")
+try:
+    checkpoint_dict = {
+        "model": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "scheduler": scheduler.state_dict(),
+        "scaler": scaler.state_dict(),
+        "epoch": cfg.epochs - 1,
+        "curr_step": cfg.curr_step,
+        "seed": cfg.seed
+    }
+    checkpoint_path = f"{cfg.output_dir}/fold{cfg.fold}/checkpoint_last_seed{cfg.seed}.pth"
+    torch.save(checkpoint_dict, checkpoint_path)
+    print(f"\n✅ Final checkpoint saved: {checkpoint_path}")
+except Exception as e:
+    print(f"\n❌ Failed to save final checkpoint: {e}")
+    import traceback
+    traceback.print_exc()
 
 # Close Neptune run
 if neptune_run:
