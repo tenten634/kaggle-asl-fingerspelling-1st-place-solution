@@ -32,7 +32,7 @@ cfg.train_val =  False
 cfg.eval_epochs = 1
 
 #logging
-cfg.wandb_project = "asl-fingerspelling"
+cfg.wandb_project = "asl-1"
 cfg.tags = "ddp8"
 cfg.seed = -1
 cfg.track_grad_norm = False

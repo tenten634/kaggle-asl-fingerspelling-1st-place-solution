@@ -28,7 +28,7 @@ cfg.eval_epochs = 1
 cfg.seed = -1
 
 #logging
-cfg.wandb_project = "asl-fingerspelling"
+cfg.wandb_project = "asl-1"
 cfg.tags = "base"
 
 # DATASET
