@@ -32,8 +32,7 @@ cfg.train_val =  False
 cfg.eval_epochs = 1
 
 #logging
-cfg.neptune_project = "common/quickstarts"
-cfg.neptune_connection_mode = "async"
+cfg.wandb_project = "asl-fingerspelling"
 cfg.tags = "ddp8"
 cfg.seed = -1
 cfg.track_grad_norm = False

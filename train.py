@@ -14,9 +14,8 @@ from torch.utils.data import Dataset, DataLoader
 from collections import defaultdict
 import transformers
 # from decouple import Config, RepositoryEnv
-import neptune
+import wandb
 import random
-from neptune.utils import stringify_unsupported
 from utils import calc_grad_norm, set_seed
 
 
@@ -68,27 +67,16 @@ tr_collate_fn = importlib.import_module(cfg.dataset).tr_collate_fn
 val_collate_fn = importlib.import_module(cfg.dataset).val_collate_fn
 batch_to_device = importlib.import_module(cfg.dataset).batch_to_device
 
-# Start neptune
-fns = [parser_args.config] + [getattr(cfg, s) for s in 'dataset model metric post_process_pipeline'.split()]
-fns = sum([glob.glob(f"{BASEDIR }/*/{fn}.py") for fn in  fns], [])
-
-if cfg.neptune_project == "common/quickstarts":
-    neptune_api_token=neptune.ANONYMOUS_API_TOKEN
-else:
-    neptune_api_token=os.environ['NEPTUNE_API_TOKEN']
-    
-neptune_run = neptune.init_run(
-        project=cfg.neptune_project,
-        tags="demo",
-        mode="async",
-        api_token=neptune_api_token,
-        capture_stdout=False,
-        capture_stderr=False,
-        source_files=fns
-    )
-print(f"Neptune system id : {neptune_run._sys_id}")
-print(f"Neptune URL       : {neptune_run.get_url()}")
-neptune_run["cfg"] = stringify_unsupported(cfg.__dict__)
+# Start wandb
+wandb_project = getattr(cfg, 'wandb_project', getattr(cfg, 'neptune_project', 'asl-fingerspelling'))
+wandb.init(
+    project=wandb_project,
+    tags=["demo"],
+    config=cfg.__dict__,
+    mode="online"
+)
+print(f"Wandb run: {wandb.run.name}")
+print(f"Wandb URL: {wandb.run.url}")
 
 
 # Read our training data
@@ -198,15 +186,14 @@ for epoch in range(cfg.epochs):
             scheduler.step()
 
         loss_names = [key for key in output_dict if 'loss' in key]
+        log_dict = {}
         for l in loss_names:
-            neptune_run[f"train/{l}"].log(value=output_dict[l].item(), step=cfg.curr_step)
-
-        neptune_run["lr"].log(
-                value=optimizer.param_groups[0]["lr"], step=cfg.curr_step
-            )
+            log_dict[f"train/{l}"] = output_dict[l].item()
+        log_dict["lr"] = optimizer.param_groups[0]["lr"]
         if total_grad_norm is not None:
-            neptune_run["total_grad_norm"].log(value=total_grad_norm.item(), step=cfg.curr_step)
-            neptune_run["total_grad_norm_after_clip"].log(value=total_grad_norm_after_clip.item(), step=cfg.curr_step)
+            log_dict["total_grad_norm"] = total_grad_norm.item()
+            log_dict["total_grad_norm_after_clip"] = total_grad_norm_after_clip.item()
+        wandb.log(log_dict, step=cfg.curr_step)
     
 
     if (epoch + 1) % cfg.eval_epochs == 0 or (epoch + 1) == cfg.epochs:
@@ -248,8 +235,7 @@ for epoch in range(cfg.epochs):
 
         for k, v in val_score.items():
             print(f"val_{k}: {v:.3f}")
-            if neptune_run:
-                neptune_run[f"val/{k}"].log(v, step=cfg.curr_step)
+            wandb.log({f"val/{k}": v}, step=cfg.curr_step)
     
 
         

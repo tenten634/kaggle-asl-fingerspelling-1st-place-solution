@@ -28,8 +28,7 @@ cfg.eval_epochs = 1
 cfg.seed = -1
 
 #logging
-cfg.neptune_project = "common/quickstarts"
-cfg.neptune_connection_mode = "async"
+cfg.wandb_project = "asl-fingerspelling"
 cfg.tags = "base"
 
 # DATASET
