@@ -14,9 +14,28 @@ from torch.utils.data import Dataset, DataLoader
 from collections import defaultdict
 import transformers
 # from decouple import Config, RepositoryEnv
-import wandb
 import random
 from utils import calc_grad_norm, set_seed
+
+# Initialize wandb and comet (optional)
+wandb_run = None
+comet_experiment = None
+
+# Try to import wandb
+try:
+    import wandb
+    WANDB_AVAILABLE = True
+except ImportError:
+    WANDB_AVAILABLE = False
+    print("⚠️  Wandb not available - wandb logging will be disabled")
+
+# Try to import comet
+try:
+    from comet_ml import Experiment
+    COMET_AVAILABLE = True
+except ImportError:
+    COMET_AVAILABLE = False
+    print("⚠️  Comet not available - comet logging will be disabled")
 
 
 BASEDIR= './'#'../input/asl-fingerspelling-config'
@@ -67,16 +86,50 @@ tr_collate_fn = importlib.import_module(cfg.dataset).tr_collate_fn
 val_collate_fn = importlib.import_module(cfg.dataset).val_collate_fn
 batch_to_device = importlib.import_module(cfg.dataset).batch_to_device
 
-# Start wandb
-wandb_project = getattr(cfg, 'wandb_project', getattr(cfg, 'neptune_project', 'asl-fingerspelling'))
-wandb.init(
-    project=wandb_project,
-    tags=["demo"],
-    config=cfg.__dict__,
-    mode="online"
-)
-print(f"Wandb run: {wandb.run.name}")
-print(f"Wandb URL: {wandb.run.url}")
+# Initialize wandb
+loggers_to_use = getattr(cfg, 'loggers', ['wandb'])
+if isinstance(loggers_to_use, str):
+    loggers_to_use = [loggers_to_use]
+
+if 'wandb' in loggers_to_use and WANDB_AVAILABLE:
+    try:
+        wandb_project = getattr(cfg, 'wandb_project', 'asl-fingerspelling')
+        wandb.init(
+            project=wandb_project,
+            tags=getattr(cfg, 'tags', ['demo']),
+            config=cfg.__dict__,
+            mode=os.environ.get('WANDB_MODE', 'online')
+        )
+        wandb_run = wandb.run
+        print(f"✅ Wandb initialized: {wandb_run.name}")
+        print(f"   URL: {wandb_run.url}")
+    except Exception as e:
+        print(f"⚠️  Wandb initialization failed: {e}")
+        wandb_run = None
+
+# Initialize comet
+if 'comet' in loggers_to_use and COMET_AVAILABLE:
+    try:
+        comet_api_key = os.environ.get('COMET_API_KEY')
+        if comet_api_key:
+            comet_project = getattr(cfg, 'comet_project', 'asl-fingerspelling')
+            comet_workspace = os.environ.get('COMET_WORKSPACE', None)
+            comet_experiment = Experiment(
+                api_key=comet_api_key,
+                project_name=comet_project,
+                workspace=comet_workspace,
+                auto_param_logging=True,
+                auto_metric_logging=False
+            )
+            comet_experiment.log_parameters(cfg.__dict__)
+            print(f"✅ Comet initialized: {comet_experiment.get_key()}")
+            print(f"   URL: {comet_experiment.url}")
+        else:
+            print("⚠️  COMET_API_KEY not set - comet logging disabled")
+            comet_experiment = None
+    except Exception as e:
+        print(f"⚠️  Comet initialization failed: {e}")
+        comet_experiment = None
 
 
 # Read our training data
@@ -186,14 +239,26 @@ for epoch in range(cfg.epochs):
             scheduler.step()
 
         loss_names = [key for key in output_dict if 'loss' in key]
-        log_dict = {}
         for l in loss_names:
-            log_dict[f"train/{l}"] = output_dict[l].item()
-        log_dict["lr"] = optimizer.param_groups[0]["lr"]
+            if wandb_run:
+                wandb_run.log({f"train/{l}": output_dict[l].item()}, step=cfg.curr_step)
+            if comet_experiment:
+                comet_experiment.log_metric(f"train/{l}", output_dict[l].item(), step=cfg.curr_step)
+        
+        if wandb_run:
+            wandb_run.log({"lr": optimizer.param_groups[0]["lr"]}, step=cfg.curr_step)
+        if comet_experiment:
+            comet_experiment.log_metric("lr", optimizer.param_groups[0]["lr"], step=cfg.curr_step)
+        
         if total_grad_norm is not None:
-            log_dict["total_grad_norm"] = total_grad_norm.item()
-            log_dict["total_grad_norm_after_clip"] = total_grad_norm_after_clip.item()
-        wandb.log(log_dict, step=cfg.curr_step)
+            if wandb_run:
+                wandb_run.log({
+                    "total_grad_norm": total_grad_norm.item(),
+                    "total_grad_norm_after_clip": total_grad_norm_after_clip.item()
+                }, step=cfg.curr_step)
+            if comet_experiment:
+                comet_experiment.log_metric("total_grad_norm", total_grad_norm.item(), step=cfg.curr_step)
+                comet_experiment.log_metric("total_grad_norm_after_clip", total_grad_norm_after_clip.item(), step=cfg.curr_step)
     
 
     if (epoch + 1) % cfg.eval_epochs == 0 or (epoch + 1) == cfg.epochs:
@@ -235,7 +300,10 @@ for epoch in range(cfg.epochs):
 
         for k, v in val_score.items():
             print(f"val_{k}: {v:.3f}")
-            wandb.log({f"val/{k}": v}, step=cfg.curr_step)
+            if wandb_run:
+                wandb_run.log({f"val/{k}": v}, step=cfg.curr_step)
+            if comet_experiment:
+                comet_experiment.log_metric(f"val/{k}", v, step=cfg.curr_step)
     
 
         
@@ -244,3 +312,9 @@ for epoch in range(cfg.epochs):
         
 torch.save({"model": model.state_dict()}, f"{cfg.output_dir}/fold{cfg.fold}/checkpoint_last_seed{cfg.seed}.pth")
 print(f"Checkpoint save : " +  f"{cfg.output_dir}/fold{cfg.fold}/checkpoint_last_seed{cfg.seed}.pth")
+
+# Finish loggers
+if wandb_run:
+    wandb_run.finish()
+if comet_experiment:
+    comet_experiment.end()
