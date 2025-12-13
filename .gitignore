@@ -101,3 +101,8 @@ datamount
 *.pth
 .neptune/
 .env
+
+# Experiment tracking
+wandb/
+.comet/
+mlruns/
