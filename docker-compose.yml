@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   training:
     image: nvcr.io/nvidia/pytorch:23.07-py3
@@ -17,4 +15,10 @@ services:
     volumes:
       - .:/workspace/kaggle-asl-fingerspelling-1st-place-solution
     shm_size: 8g
-    command: tail -f /dev/null
+    command: >
+      bash -c "
+        pip install -q -r requirements.txt &&
+        python train.py -C cfg_2 --fold -1 &&
+        python train.py -C cfg_2 --fold -1 &&
+        python scripts/convert_cfg_2_to_tf_lite.py
+      "
