@@ -17,9 +17,10 @@ import transformers
 import random
 from utils import calc_grad_norm, set_seed
 
-# Initialize wandb and comet (optional)
+# Initialize wandb, comet, and mlflow (optional)
 wandb_run = None
 comet_experiment = None
+mlflow_run = None
 
 # Try to import wandb
 try:
@@ -36,6 +37,14 @@ try:
 except ImportError:
     COMET_AVAILABLE = False
     print("⚠️  Comet not available - comet logging will be disabled")
+
+# Try to import mlflow
+try:
+    import mlflow
+    MLFLOW_AVAILABLE = True
+except ImportError:
+    MLFLOW_AVAILABLE = False
+    print("⚠️  MLflow not available - mlflow logging will be disabled")
 
 
 BASEDIR= './'#'../input/asl-fingerspelling-config'
@@ -130,6 +139,35 @@ if 'comet' in loggers_to_use and COMET_AVAILABLE:
     except Exception as e:
         print(f"⚠️  Comet initialization failed: {e}")
         comet_experiment = None
+
+# Initialize MLflow
+if 'mlflow' in loggers_to_use and MLFLOW_AVAILABLE:
+    try:
+        databricks_host = os.environ.get('DATABRICKS_HOST')
+        databricks_token = os.environ.get('DATABRICKS_TOKEN')
+        
+        if databricks_host and databricks_token:
+            mlflow.set_tracking_uri("databricks")
+            mlflow_experiment = getattr(cfg, 'mlflow_experiment', '/Shared/asl-fingerspelling')
+            mlflow.set_experiment(mlflow_experiment)
+            
+            run_name = getattr(cfg, 'mlflow_run_name', None)
+            if run_name is None:
+                tags = getattr(cfg, 'tags', ['demo'])
+                tag_str = '-'.join(tags) if isinstance(tags, list) else str(tags)
+                run_name = f"{parser_args.config}_fold{cfg.fold}_{tag_str}"
+            
+            mlflow_run = mlflow.start_run(run_name=run_name)
+            mlflow.log_params(cfg.__dict__)
+            print(f"✅ MLflow initialized: {run_name}")
+            print(f"   Run ID: {mlflow_run.info.run_id}")
+            print(f"   Experiment: {mlflow_experiment}")
+        else:
+            print("⚠️  DATABRICKS_HOST or DATABRICKS_TOKEN not set - mlflow logging disabled")
+            mlflow_run = None
+    except Exception as e:
+        print(f"⚠️  MLflow initialization failed: {e}")
+        mlflow_run = None
 
 
 # Read our training data
@@ -244,11 +282,15 @@ for epoch in range(cfg.epochs):
                 wandb_run.log({f"train/{l}": output_dict[l].item()}, step=cfg.curr_step)
             if comet_experiment:
                 comet_experiment.log_metric(f"train/{l}", output_dict[l].item(), step=cfg.curr_step)
+            if mlflow_run:
+                mlflow.log_metric(f"train/{l}", output_dict[l].item(), step=cfg.curr_step)
         
         if wandb_run:
             wandb_run.log({"lr": optimizer.param_groups[0]["lr"]}, step=cfg.curr_step)
         if comet_experiment:
             comet_experiment.log_metric("lr", optimizer.param_groups[0]["lr"], step=cfg.curr_step)
+        if mlflow_run:
+            mlflow.log_metric("lr", optimizer.param_groups[0]["lr"], step=cfg.curr_step)
         
         if total_grad_norm is not None:
             if wandb_run:
@@ -259,6 +301,9 @@ for epoch in range(cfg.epochs):
             if comet_experiment:
                 comet_experiment.log_metric("total_grad_norm", total_grad_norm.item(), step=cfg.curr_step)
                 comet_experiment.log_metric("total_grad_norm_after_clip", total_grad_norm_after_clip.item(), step=cfg.curr_step)
+            if mlflow_run:
+                mlflow.log_metric("total_grad_norm", total_grad_norm.item(), step=cfg.curr_step)
+                mlflow.log_metric("total_grad_norm_after_clip", total_grad_norm_after_clip.item(), step=cfg.curr_step)
     
 
     if (epoch + 1) % cfg.eval_epochs == 0 or (epoch + 1) == cfg.epochs:
@@ -304,6 +349,8 @@ for epoch in range(cfg.epochs):
                 wandb_run.log({f"val/{k}": v}, step=cfg.curr_step)
             if comet_experiment:
                 comet_experiment.log_metric(f"val/{k}", v, step=cfg.curr_step)
+            if mlflow_run:
+                mlflow.log_metric(f"val/{k}", v, step=cfg.curr_step)
     
 
         
@@ -318,3 +365,5 @@ if wandb_run:
     wandb_run.finish()
 if comet_experiment:
     comet_experiment.end()
+if mlflow_run:
+    mlflow.end_run()

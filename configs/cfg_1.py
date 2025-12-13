@@ -29,9 +29,10 @@ cfg.seed = -1
 
 #logging
 # wandbとCometを同時に使用
-cfg.loggers = ['wandb', 'comet']
+cfg.loggers = ['wandb', 'comet', 'mlflow']
 cfg.wandb_project = "asl-1"
 cfg.comet_project = "asl-1"
+cfg.mlflow_experiment = "/Shared/asl-1"
 cfg.tags = "base"
 
 # DATASET
