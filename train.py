@@ -17,6 +17,14 @@ import transformers
 import random
 from utils import calc_grad_norm, set_seed
 
+# Helper function to safely convert tensor to scalar (handles DataParallel)
+def safe_item(tensor):
+    """Safely convert tensor to Python scalar, handling DataParallel cases."""
+    if tensor.numel() == 1:
+        return tensor.item()
+    else:
+        return tensor.mean().item()
+
 # Initialize wandb, comet, and mlflow (optional)
 wandb_run = None
 comet_experiment = None
@@ -257,7 +265,7 @@ for epoch in range(cfg.epochs):
         else:
             output_dict = model(batch)
         loss = output_dict["loss"]
-        losses.append(loss.item())
+        losses.append(safe_item(loss))
 
         if cfg.grad_accumulation >1:
             loss /= cfg.grad_accumulation
@@ -289,12 +297,13 @@ for epoch in range(cfg.epochs):
 
         loss_names = [key for key in output_dict if 'loss' in key]
         for l in loss_names:
+            loss_value = safe_item(output_dict[l])
             if wandb_run:
-                wandb_run.log({f"train/{l}": output_dict[l].item()}, step=cfg.curr_step)
+                wandb_run.log({f"train/{l}": loss_value}, step=cfg.curr_step)
             if comet_experiment:
-                comet_experiment.log_metric(f"train/{l}", output_dict[l].item(), step=cfg.curr_step)
+                comet_experiment.log_metric(f"train/{l}", loss_value, step=cfg.curr_step)
             if mlflow_run:
-                mlflow.log_metric(f"train/{l}", output_dict[l].item(), step=cfg.curr_step)
+                mlflow.log_metric(f"train/{l}", loss_value, step=cfg.curr_step)
         
         if wandb_run:
             wandb_run.log({"lr": optimizer.param_groups[0]["lr"]}, step=cfg.curr_step)
@@ -304,17 +313,19 @@ for epoch in range(cfg.epochs):
             mlflow.log_metric("lr", optimizer.param_groups[0]["lr"], step=cfg.curr_step)
         
         if total_grad_norm is not None:
+            grad_norm_value = safe_item(total_grad_norm)
+            grad_norm_after_clip_value = safe_item(total_grad_norm_after_clip)
             if wandb_run:
                 wandb_run.log({
-                    "total_grad_norm": total_grad_norm.item(),
-                    "total_grad_norm_after_clip": total_grad_norm_after_clip.item()
+                    "total_grad_norm": grad_norm_value,
+                    "total_grad_norm_after_clip": grad_norm_after_clip_value
                 }, step=cfg.curr_step)
             if comet_experiment:
-                comet_experiment.log_metric("total_grad_norm", total_grad_norm.item(), step=cfg.curr_step)
-                comet_experiment.log_metric("total_grad_norm_after_clip", total_grad_norm_after_clip.item(), step=cfg.curr_step)
+                comet_experiment.log_metric("total_grad_norm", grad_norm_value, step=cfg.curr_step)
+                comet_experiment.log_metric("total_grad_norm_after_clip", grad_norm_after_clip_value, step=cfg.curr_step)
             if mlflow_run:
-                mlflow.log_metric("total_grad_norm", total_grad_norm.item(), step=cfg.curr_step)
-                mlflow.log_metric("total_grad_norm_after_clip", total_grad_norm_after_clip.item(), step=cfg.curr_step)
+                mlflow.log_metric("total_grad_norm", grad_norm_value, step=cfg.curr_step)
+                mlflow.log_metric("total_grad_norm_after_clip", grad_norm_after_clip_value, step=cfg.curr_step)
     
 
     if (epoch + 1) % cfg.eval_epochs == 0 or (epoch + 1) == cfg.epochs:
