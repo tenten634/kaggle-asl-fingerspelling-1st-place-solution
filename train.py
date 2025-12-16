@@ -17,13 +17,22 @@ import transformers
 import random
 from utils import calc_grad_norm, set_seed
 
-# Helper function to safely convert tensor to scalar (handles DataParallel)
-def safe_item(tensor):
-    """Safely convert tensor to Python scalar, handling DataParallel cases."""
-    if tensor.numel() == 1:
-        return tensor.item()
-    else:
-        return tensor.mean().item()
+# Helper function to normalize output_dict from DataParallel (ensures all loss values are scalars)
+def normalize_output_dict(output_dict):
+    """Normalize output_dict to ensure all loss values are scalars (handles DataParallel cases).
+    This allows the rest of the code to use .item() directly without modification.
+    """
+    normalized = {}
+    for key, value in output_dict.items():
+        if isinstance(value, torch.Tensor):
+            # If tensor has multiple elements (DataParallel case), take mean to make it scalar
+            if value.numel() > 1:
+                normalized[key] = value.mean()
+            else:
+                normalized[key] = value
+        else:
+            normalized[key] = value
+    return normalized
 
 # Initialize wandb, comet, and mlflow (optional)
 wandb_run = None
@@ -264,8 +273,12 @@ for epoch in range(cfg.epochs):
                 output_dict = model(batch)
         else:
             output_dict = model(batch)
+        
+        # Normalize output_dict to ensure all loss values are scalars (handles DataParallel)
+        output_dict = normalize_output_dict(output_dict)
+        
         loss = output_dict["loss"]
-        losses.append(safe_item(loss))
+        losses.append(loss.item())
 
         if cfg.grad_accumulation >1:
             loss /= cfg.grad_accumulation
@@ -297,7 +310,7 @@ for epoch in range(cfg.epochs):
 
         loss_names = [key for key in output_dict if 'loss' in key]
         for l in loss_names:
-            loss_value = safe_item(output_dict[l])
+            loss_value = output_dict[l].item()
             if wandb_run:
                 wandb_run.log({f"train/{l}": loss_value}, step=cfg.curr_step)
             if comet_experiment:
@@ -313,8 +326,8 @@ for epoch in range(cfg.epochs):
             mlflow.log_metric("lr", optimizer.param_groups[0]["lr"], step=cfg.curr_step)
         
         if total_grad_norm is not None:
-            grad_norm_value = safe_item(total_grad_norm)
-            grad_norm_after_clip_value = safe_item(total_grad_norm_after_clip)
+            grad_norm_value = total_grad_norm.item()
+            grad_norm_after_clip_value = total_grad_norm_after_clip.item()
             if wandb_run:
                 wandb_run.log({
                     "total_grad_norm": grad_norm_value,
@@ -340,6 +353,10 @@ for epoch in range(cfg.epochs):
                     output = model(batch)
             else:
                 output = model(batch)
+            
+            # Normalize output to ensure all loss values are scalars (handles DataParallel)
+            output = normalize_output_dict(output)
+            
             for key, val in output.items():
                 val_data[key] += [output[key]]
         for key, val in output.items():
