@@ -55,11 +55,17 @@ for DIRNAME in 'configs data models postprocess metrics'.split():
 parser = argparse.ArgumentParser(description="")
 
 parser.add_argument("-C", "--config", help="config filename", default="cfg_ch_38")
-parser.add_argument("-G", "--gpu_id", default="", help="GPU ID")
+parser.add_argument("-G", "--gpu_id", default="", help="GPU ID (e.g., '0,1' for multiple GPUs, '' for all available)")
 parser_args, other_args = parser.parse_known_args(sys.argv)
 cfg = copy(importlib.import_module(parser_args.config).cfg)
 if parser_args.gpu_id != "":
     os.environ['CUDA_VISIBLE_DEVICES'] = str(parser_args.gpu_id)
+else:
+    # If not specified, use all available GPUs
+    num_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 0
+    if num_gpus > 0:
+        os.environ['CUDA_VISIBLE_DEVICES'] = ','.join([str(i) for i in range(num_gpus)])
+        print(f"Using all available GPUs: {os.environ['CUDA_VISIBLE_DEVICES']}")
 
 # overwrite params in config with additional args
 if len(other_args) > 1:
@@ -203,6 +209,11 @@ val_dataloader = DataLoader(
 
 # Set up the model
 model = Net(cfg).to(cfg.device)
+
+# Use multiple GPUs if available
+if torch.cuda.device_count() > 1:
+    print(f"Using {torch.cuda.device_count()} GPUs with DataParallel")
+    model = torch.nn.DataParallel(model)
 
 total_steps = len(train_dataset)
 optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
