@@ -23,7 +23,7 @@ services:
       - /dev/nvidia-uvm:/dev/nvidia-uvm
     volumes:
       - .:/workspace/kaggle-asl-fingerspelling-1st-place-solution
-    shm_size: 8g
+    shm_size: 16g
     command: >
       bash -c "
         pip install -q -r requirements.txt &&
