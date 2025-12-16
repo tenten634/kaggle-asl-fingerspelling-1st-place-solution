@@ -3,6 +3,7 @@ services:
     image: nvcr.io/nvidia/pytorch:23.07-py3
     container_name: asl-training
     working_dir: /workspace/kaggle-asl-fingerspelling-1st-place-solution
+    runtime: nvidia
     deploy:
       resources:
         reservations:
@@ -12,6 +13,9 @@ services:
               capabilities: [gpu]
     env_file:
       - .env
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     volumes:
       - .:/workspace/kaggle-asl-fingerspelling-1st-place-solution
     shm_size: 8g
