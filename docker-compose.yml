@@ -1,8 +1,16 @@
 services:
   training:
     image: nvcr.io/nvidia/pytorch:23.07-py3
-    container_name: asl-1
+    container_name: asl-training
     working_dir: /workspace/kaggle-asl-fingerspelling-1st-place-solution
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     env_file:
       - .env
     environment:
@@ -13,12 +21,9 @@ services:
       - /dev/nvidia1:/dev/nvidia1
       - /dev/nvidiactl:/dev/nvidiactl
       - /dev/nvidia-uvm:/dev/nvidia-uvm
-
     volumes:
       - .:/workspace/kaggle-asl-fingerspelling-1st-place-solution
-
     shm_size: 8g
-
     command: >
       bash -c "
         pip install -q -r requirements.txt &&
@@ -26,3 +31,4 @@ services:
         python train.py -C cfg_2 --fold -1 &&
         python scripts/convert_cfg_2_to_tf_lite.py
       "
+      
