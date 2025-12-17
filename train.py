@@ -17,16 +17,16 @@ import transformers
 import random
 from utils import calc_grad_norm, set_seed
 
-# Helper function to normalize output_dict from DataParallel (ensures loss values are scalars)
+# Helper function to normalize output_dict from DataParallel (ensures loss/score values are scalars)
 def normalize_output_dict(output_dict):
-    """Normalize output_dict to ensure loss-like values are scalars (handles DataParallel).
-    Non-floating tensors (e.g., ids/lengths) are returned untouched to avoid dtype errors.
+    """Normalize output_dict to ensure loss/score values are scalars (handles DataParallel).
+    Only floating tensors whose keys contain 'loss' or 'score' are averaged; others are untouched.
     """
     normalized = {}
     for key, value in output_dict.items():
         if isinstance(value, torch.Tensor):
-            if value.numel() > 1 and torch.is_floating_point(value):
-                # Only average floating tensors (loss/score). Leave integer tensors as-is.
+            if value.numel() > 1 and torch.is_floating_point(value) and ('loss' in key or 'score' in key):
+                # Only average floating loss/score tensors. Leave logits/ids/etc. as-is.
                 normalized[key] = value.mean()
             else:
                 normalized[key] = value
