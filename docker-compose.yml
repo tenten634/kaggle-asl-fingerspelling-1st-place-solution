@@ -27,7 +27,7 @@ services:
     command: >
       bash -c "
         pip install -q -r requirements.txt &&
-        python train.py -C cfg_2 &&
-        python train.py -C cfg_2 &&
+        python train.py -C cfg_2 --fold -1 &&
+        python train.py -C cfg_2 --fold -1 &&
         python scripts/convert_cfg_2_to_tf_lite.py
       "
